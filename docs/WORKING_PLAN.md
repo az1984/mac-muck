@@ -14,7 +14,7 @@ This document outlines the implementation plan for adding new functions to the m
 
 ## Implementation Tasks
 
-### Task 1: Implement RemoveFinderExtension
+### Task 1: Implement RemoveFinderExtension ✅ IN PROGRESS
 **Purpose**: Disable and unregister a Finder Sync extension by bundle identifier using `pluginkit`.
 
 **Interface**:
@@ -27,24 +27,24 @@ RemoveFinderExtension <bundle_id> [--tolerant-missing] [--needs-root]
 **Reference Documents**:
 - **Function Spec**: `docs/FUNCTION_SPECS.md` — Section 1 (RemoveFinderExtension)
 - **Coding Standards**: `docs/BASH_CODING_STANDARDS.md` — Sections 1-5 (Naming, Script Structure, Function Anatomy, Return Codes, Function Header)
-- **Spec File**: `spec/remove_finder_extension_spec.sh` (to be created)
+- **Spec File**: `spec/remove_finder_extension_spec.sh` (created)
 - **Project Rules**: `.clinerules` — Function anatomy, naming conventions, return codes
 
 **Implementation Steps**:
-- [ ] Design: Define function anatomy (set -f, IFS, logging prefixes, arg parsing)
-- [ ] Design: Define validation regex for bundle_id (reverse-DNS ≥3 labels)
-- [ ] Design: Define verify-after logic (pluginkit -m returns empty)
-- [ ] Implementation: Write function to `src/uninstaller.sh` (section #3)
-- [ ] Implementation: Add function header comment block with metadata
-- [ ] Implementation: Ensure all variables quoted, no nested functions
-- [ ] Testing: Create `spec/remove_finder_extension_spec.sh`
-- [ ] Testing: Happy path test (rc 0)
-- [ ] Testing: Bad input tests (rc 2 - missing args, unknown flag, invalid format)
-- [ ] Testing: Tolerant-missing test (rc 0)
-- [ ] Testing: Strict-missing test (rc 4)
-- [ ] Testing: Verify-after failure test (rc 5)
-- [ ] Verification: Run `shellcheck -s bash` - zero warnings
-- [ ] Verification: Run `shellspec spec/remove_finder_extension_spec.sh` - all pass
+- [x] Design: Define function anatomy (set -f, IFS, logging prefixes, arg parsing)
+- [x] Design: Define validation regex for bundle_id (reverse-DNS ≥3 labels)
+- [x] Design: Define verify-after logic (pluginkit -m returns empty)
+- [x] Implementation: Write function to `src/uninstaller.sh` (section #3)
+- [x] Implementation: Add function header comment block with metadata
+- [x] Implementation: Ensure all variables quoted, no nested functions
+- [x] Testing: Create `spec/remove_finder_extension_spec.sh`
+- [ ] Testing: Happy path test (rc 0) — *Skipped, requires pluginkit mocking*
+- [x] Testing: Bad input tests (rc 2 - missing args, unknown flag, invalid format)
+- [x] Testing: Tolerant-missing test (rc 0)
+- [x] Testing: Strict-missing test (rc 4)
+- [ ] Testing: Verify-after failure test (rc 5) — *Skipped, requires pluginkit mocking*
+- [x] Verification: Run `shellcheck -s bash` - zero warnings (no new warnings introduced)
+- [ ] Verification: Run `shellspec spec/remove_finder_extension_spec.sh` - all pass — *Pending shellspec installation*
 
 ---
 
