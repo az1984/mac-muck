@@ -24,6 +24,12 @@ RemoveFinderExtension <bundle_id> [--tolerant-missing] [--needs-root]
 
 **Dependencies**: `/usr/bin/pluginkit`
 
+**Reference Documents**:
+- **Function Spec**: `docs/FUNCTION_SPECS.md` — Section 1 (RemoveFinderExtension)
+- **Coding Standards**: `docs/BASH_CODING_STANDARDS.md` — Sections 1-5 (Naming, Script Structure, Function Anatomy, Return Codes, Function Header)
+- **Spec File**: `spec/remove_finder_extension_spec.sh` (to be created)
+- **Project Rules**: `.clinerules` — Function anatomy, naming conventions, return codes
+
 **Implementation Steps**:
 - [ ] Design: Define function anatomy (set -f, IFS, logging prefixes, arg parsing)
 - [ ] Design: Define validation regex for bundle_id (reverse-DNS ≥3 labels)
@@ -51,6 +57,12 @@ RemoveQuickLookPlugin <path_to_qlgenerator> [--tolerant-missing] [--needs-root]
 ```
 
 **Dependencies**: `SafeRemovePath`, `/usr/bin/chflags` (optional, root-only)
+
+**Reference Documents**:
+- **Function Spec**: `docs/FUNCTION_SPECS.md` — Section 2 (RemoveQuickLookPlugin)
+- **Coding Standards**: `docs/BASH_CODING_STANDARDS.md` — Sections 1-5 (Naming, Script Structure, Function Anatomy, Return Codes, Function Header)
+- **Spec File**: `spec/remove_quicklook_plugin_spec.sh` (to be created)
+- **Project Rules**: `.clinerules` — `qlmanage -r` called in main() AFTER loop, NOT inside function
 
 **Important**: `qlmanage -r` is called ONCE in `main()` after the removal loop, NOT inside this function.
 
@@ -81,6 +93,12 @@ RemovePrivilegedHelper <path> [--tolerant-missing] [--needs-root]
 ```
 
 **Dependencies**: `SafeDelete`, `/usr/bin/chflags` (optional, root-only)
+
+**Reference Documents**:
+- **Function Spec**: `docs/FUNCTION_SPECS.md` — Section 4 (RemovePrivilegedHelper)
+- **Coding Standards**: `docs/BASH_CODING_STANDARDS.md` — Sections 1-5 (Naming, Script Structure, Function Anatomy, Return Codes, Function Header)
+- **Spec File**: `spec/remove_privileged_helper_spec.sh` (to be created)
+- **Project Rules**: `.clinerules` — Path must be under `/Library/PrivilegedHelperTools/`
 
 **Implementation Steps**:
 - [ ] Design: Define path validation (absolute, under `/Library/PrivilegedHelperTools/`)
@@ -114,6 +132,12 @@ TYPE=<daemon|agent|helper|app|login_item|unknown> PATH=<filesystem_path> DISPOSI
 ```
 
 **Dependencies**: `/usr/bin/sfltool`
+
+**Reference Documents**:
+- **Function Spec**: `docs/FUNCTION_SPECS.md` — Section 3 (IdentifyLoginItemType)
+- **Coding Standards**: `docs/BASH_CODING_STANDARDS.md` — Sections 1-5 (Naming, Script Structure, Function Anatomy, Return Codes, Function Header)
+- **Spec File**: `spec/identify_login_item_type_spec.sh` (to be created/updated)
+- **Project Rules**: `.clinerules` — This is a DETECTOR, not a remover; sfltool output format varies by macOS version; parser MUST be defensive
 
 **Implementation Steps**:
 - [ ] Design: Define identifier validation (reverse-DNS ≥3 labels)
@@ -152,6 +176,12 @@ ParseInput "$@"
 4. Hardcoded arrays (fallback)
 
 **Dependencies**: `ParseManifestJSON`, `/usr/bin/plutil`
+
+**Reference Documents**:
+- **Function Spec**: `docs/FUNCTION_SPECS.md` — Section 5 (ParseInput)
+- **Coding Standards**: `docs/BASH_CODING_STANDARDS.md` — Sections 1-5 (Naming, Script Structure, Function Anatomy, Return Codes, Function Header)
+- **Spec File**: `spec/parse_input_spec.sh` (to be created/updated)
+- **Project Rules**: `.clinerules` — Lives in section #3 but CALLED in section #4 before main; three-mode priority chain; pipe delimiter for CLI/Jamf
 
 **Implementation Steps**:
 - [ ] Design: Define mode detection logic (manifest → CLI → Jamf → hardcoded)
@@ -200,6 +230,12 @@ ParseManifestJSON <manifest_path>
 
 **Dependencies**: `/usr/bin/plutil`
 
+**Reference Documents**:
+- **Function Spec**: `docs/FUNCTION_SPECS.md` — Section 5 (ParseInput → ParseManifestJSON)
+- **Coding Standards**: `docs/BASH_CODING_STANDARDS.md` — Sections 1-5 (Naming, Script Structure, Function Anatomy, Return Codes, Function Header)
+- **Spec File**: `spec/parse_manifest_json_spec.sh` (to be created)
+- **Project Rules**: `.clinerules` — Uses `/usr/bin/plutil` only, no Python on endpoints
+
 **Implementation Steps**:
 - [ ] Design: Define path validation (exists, is file)
 - [ ] Design: Define plutil invocation (convert JSON to extractable format)
@@ -234,6 +270,12 @@ RemoveLoginItems <identifier> [--tolerant-missing] [--needs-root]
 | `unknown` | Warn, attempt `SafeRemovePath "$path"` if available, return 5 |
 
 **Dependencies**: `IdentifyLoginItemType`, `UnloadAndRemoveLaunchDaemon`, `UnloadAndRemoveLaunchAgent`, `RemovePrivilegedHelper`, `QuitAppByPath`, `SafeRemovePath`
+
+**Reference Documents**:
+- **Function Spec**: `docs/FUNCTION_SPECS.md` — Section 3 (IdentifyLoginItemType → How main() uses this)
+- **Coding Standards**: `docs/BASH_CODING_STANDARDS.md` — Sections 1-5 (Naming, Script Structure, Function Anatomy, Return Codes, Function Header)
+- **Spec File**: `spec/remove_login_items_spec.sh` (to be created)
+- **Project Rules**: `.clinerules` — Wrapper delegates to other functions; does NOT implement removal natively; granularity is key
 
 **Implementation Steps**:
 - [ ] Design: Define identifier validation (reverse-DNS ≥3 labels)
