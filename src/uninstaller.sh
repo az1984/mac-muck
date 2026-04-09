@@ -2079,6 +2079,136 @@ UnloadAndRemoveLaunchDaemon() {
 }
 
 
+# @name RemoveFinderExtension
+# @version 1.0.0
+# @approved true
+# @channels stable,beta
+# @branch core
+# @requires /usr/bin/pluginkit
+#
+# RemoveFinderExtension — Disable and unregister a Finder Sync extension.
+#   Uses pluginkit to disable (ignore) then remove registration.
+#   The .appex on disk is NOT removed by this function; app bundle removal
+#   handles that separately via SafeRemovePath.
+#
+# Inputs (order-agnostic):
+#   $*  <bundle_id> [--tolerant-missing] [--needs-root]
+#
+# Returns:
+#   0 = success (extension removed, or absent with --tolerant-missing)
+#   1 = generic failure (pluginkit missing, internal error)
+#   2 = bad input (missing arg, unknown flag, invalid bundle_id format)
+#   3 = needs root (--needs-root specified but EUID != 0)
+#   4 = extension not registered and NOT tolerant
+#   5 = operation failed (verify-after shows still registered)
+#
+# Safety notes:
+#   - This function only removes the registration from pluginkit database.
+#   - Does NOT remove the .appex file from disk (that's handled by app removal).
+#   - Bundle ID is validated to reverse-DNS format with ≥3 labels.
+function RemoveFinderExtension {
+  set -f
+  local IFS=$' \t\n'
+
+  # Aligned logging prefixes
+  local fnw="${LOG_FN_WIDTH:-24}" lvw="${LOG_LVL_WIDTH:-10}"
+  local my_echo_prefix="${ECHO_PREFIX:-}$(printf "%-*s" "$fnw" "RemoveFinderExtension()  - ")"
+  local my_vrb_prefix="$(printf "%-*s" "$lvw" "INFO:")"
+  local my_err_prefix="$(printf "%-*s" "$lvw" "ERROR:")"
+  local my_dbg_prefix="$(printf "%-*s" "$lvw" "DEBUG:")"
+
+  # Order-agnostic argument parsing with duplicate detection
+  local tolerant=false needs_root=false bundle_id=""
+  if (( $# == 0 || $# > 3 )); then
+    echo "${my_echo_prefix}${my_err_prefix}Bad input: expected <bundle_id> [--tolerant-missing] [--needs-root]. Got $# args."
+    return 2
+  fi
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      --tolerant-missing)
+        if [[ $tolerant == true ]]; then
+          echo "${my_echo_prefix}${my_err_prefix}Bad input: duplicate --tolerant-missing flag."
+          return 2
+        fi
+        tolerant=true ;;
+      --needs-root)
+        if [[ $needs_root == true ]]; then
+          echo "${my_echo_prefix}${my_err_prefix}Bad input: duplicate --needs-root flag."
+          return 2
+        fi
+        needs_root=true ;;
+      -*)
+        echo "${my_echo_prefix}${my_err_prefix}Bad input: unknown flag '$arg'."
+        return 2 ;;
+      *)
+        if [[ -n "$bundle_id" ]]; then
+          echo "${my_echo_prefix}${my_err_prefix}Bad input: multiple non-flag arguments."
+          return 2
+        fi
+        bundle_id="$arg" ;;
+    esac
+  done
+
+  # Root gate (opt-in)
+  if $needs_root && [[ $EUID -ne 0 ]]; then
+    echo "${my_echo_prefix}${my_err_prefix}Needs root: run as sudo/root."
+    return 3
+  fi
+
+  # Tool presence check
+  local PLUGINKIT_BIN="/usr/bin/pluginkit"
+  if [[ ! -x "$PLUGINKIT_BIN" ]]; then
+    echo "${my_echo_prefix}${my_err_prefix}Missing required tool: $PLUGINKIT_BIN"
+    return 1
+  fi
+
+  # Strict bundle ID validation (reverse-DNS with ≥3 labels)
+  local id_re='^[A-Za-z][A-Za-z0-9]*(\.[A-Za-z][A-Za-z0-9_-]*){2,}$'
+  if [[ ! "$bundle_id" =~ $id_re ]]; then
+    echo "${my_echo_prefix}${my_err_prefix}Invalid bundle ID format: $bundle_id"
+    return 2
+  fi
+
+  # Presence check (pluginkit -m -i returns info if registered, empty if not)
+  local check_output
+  check_output=$("$PLUGINKIT_BIN" -m -i "$bundle_id" 2>/dev/null || true)
+  if [[ -z "$check_output" ]]; then
+    if $tolerant; then
+      [[ ${VERBOSE:-false} == true || ${DEBUG:-false} == true ]] && \
+        echo "${my_echo_prefix}${my_vrb_prefix}Extension not registered (tolerant-missing): $bundle_id"
+      return 0
+    else
+      echo "${my_echo_prefix}${my_err_prefix}Extension not registered: $bundle_id"
+      return 4
+    fi
+  fi
+  [[ ${DEBUG:-false} == true ]] && echo "${my_echo_prefix}${my_dbg_prefix}Extension registered. Proceeding to disable and remove."
+
+  # Step 1: Disable (ignore) the extension
+  [[ ${VERBOSE:-false} == true || ${DEBUG:-false} == true ]] && \
+    echo "${my_echo_prefix}${my_vrb_prefix}Disabling extension: $bundle_id"
+  "$PLUGINKIT_BIN" -e ignore -i "$bundle_id" 2>/dev/null || true
+
+  # Step 2: Remove registration
+  [[ ${VERBOSE:-false} == true || ${DEBUG:-false} == true ]] && \
+    echo "${my_echo_prefix}${my_vrb_prefix}Removing registration: $bundle_id"
+  "$PLUGINKIT_BIN" -r -i "$bundle_id" 2>/dev/null || true
+
+  # Step 3: Verify-after (pluginkit -m -i should return empty)
+  local verify_output
+  verify_output=$("$PLUGINKIT_BIN" -m -i "$bundle_id" 2>/dev/null || true)
+  if [[ -n "$verify_output" ]]; then
+    echo "${my_echo_prefix}${my_err_prefix}Extension still registered after removal: $bundle_id"
+    return 5
+  fi
+
+  [[ ${VERBOSE:-false} == true || ${DEBUG:-false} == true ]] && \
+    echo "${my_echo_prefix}${my_vrb_prefix}Extension successfully removed: $bundle_id"
+  return 0
+}
+#--------------------------------------------------------------------------------
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Run
 # ──────────────────────────────────────────────────────────────────────────────
