@@ -1,0 +1,140 @@
+# .clinerules — Cline AI coding rules for the Universal Uninstaller project
+#
+# These rules are mandatory. Cline must follow ALL of them when generating,
+# modifying, or reviewing bash code in this project.
+
+## Project overview
+This is a macOS universal uninstaller engine written in Bash. It removes applications
+and their persistence artifacts (LaunchAgents, LaunchDaemons, Finder extensions,
+QuickLook plugins, PrivilegedHelperTools, package receipts, and scattered files).
+The script is deployed to macOS endpoints via Jamf Pro and must use ONLY Apple-shipped
+binaries — no Python, no jq, no Homebrew tools on endpoints.
+
+## Architecture
+The uninstaller follows a strict four-section layout:
+1. **Config** — global variables and target arrays (PATHS_TO_REMOVE, PKGS_TO_REMOVE, etc.)
+2. **main()** — defined but not called; contains root check, iteration loops, summary
+3. **Functions** — all helper functions, declared after main
+4. **main "$@"** — single invocation at end of file
+
+DO NOT reorder these sections. DO NOT put functions before main(). DO NOT call main()
+anywhere except the last line of the script.
+
+## Coding standards (MANDATORY)
+Read `docs/BASH_CODING_STANDARDS.md` before writing any code. Key rules:
+
+### Naming
+- Functions: `UpperCamelCase` — e.g., `RemoveFinderExtension`, `VerifyServiceUnloaded`
+- Function declarations: `function FunctionName {` — use the `function` keyword, NO parentheses
+- Globals: `UPPER_SNAKE_CASE` — e.g., `PATHS_TO_REMOVE`, `LAUNCH_AGENTS_TO_REMOVE`
+- Locals: `lower_snake_case` — e.g., `tolerant`, `label`, `failures`
+- Tool binaries: `local TOOL_BIN="/full/path"` with `_BIN` suffix
+
+### Function anatomy (every function, no exceptions)
+1. `set -f` and `local IFS=$' \t\n'` as the first two lines
+2. Aligned logging prefixes using `LOG_FN_WIDTH` and `LOG_LVL_WIDTH`
+3. Order-agnostic argument parsing with `for arg in "$@"; do case`
+4. Duplicate flag detection (reject duplicates with rc 2)
+5. Unknown flag rejection (`-*` catch-all returns rc 2)
+6. Root gate: opt-in (`--needs-root`) or mandatory (e.g., daemons)
+7. Tool presence check: `[[ ! -x "$TOOL_BIN" ]]` → rc 1
+8. Input validation: reverse-DNS regex for identifiers, path validation for paths
+9. Action → Verify pattern: every destructive action is followed by verification
+10. Verbose/Debug gating: INFO behind `VERBOSE`, DEBUG behind `DEBUG`, ERROR always prints
+
+### Return codes (standardized across ALL functions)
+- 0 = success
+- 1 = generic failure (missing tool, internal error)
+- 2 = bad input (wrong args, bad format, unknown flag)
+- 3 = needs root
+- 4 = target not present and NOT tolerant
+- 5 = operation failed (action attempted, verify-after shows it didn't take)
+
+### Safety rules
+- ALL variables must be quoted: `"$var"` never `$var`
+- No nested function definitions — every function is a top-level peer
+- Full absolute paths for all external binaries
+- No `eval` on untrusted data
+- Never trust `launchctl` exit codes — parse stdout/stderr text instead
+- For `launchctl`: capture to tmpfiles with `mktemp`, cat back, rm — not subshell capture
+
+### Function header comments (required for every function)
+```
+# @name FunctionName
+# @version 1.0.0
+# @approved true
+# @channels stable,beta
+# @branch core
+# @requires Dependencies, /path/to/tool
+#
+# FunctionName — One-line summary.
+#   Additional context.
+#
+# Inputs (order-agnostic):
+#   $*  <required_arg> [--tolerant-missing] [--needs-root]
+#
+# Returns:
+#   0 = success (description)
+#   1–5 per standard scheme
+#
+# Safety notes:
+#   - What this function does NOT do
+#   - Validation approach
+```
+
+## Specs and testing
+
+### shellcheck
+Every script and function must pass `shellcheck -s bash` with zero warnings.
+If suppression is needed, use inline `# shellcheck disable=SCXXXX` with a comment.
+
+### ShellSpec
+Every function must have a corresponding spec file in `spec/`.
+Minimum test coverage per function:
+1. Happy path (rc 0)
+2. Bad input — missing args (rc 2)
+3. Bad input — unknown flag (rc 2)
+4. Bad input — invalid format (rc 2)
+5. Tolerant-missing absent target (rc 0)
+6. Strict-missing absent target (rc 4)
+7. Verify-after failure (rc 5) — mock the action tool to succeed but verify to fail
+
+Spec files use the naming convention: `spec/<function_name_snake_case>_spec.sh`
+
+Run specs with: `shellspec`
+
+## Reference documents
+- `docs/BASH_CODING_STANDARDS.md` — full coding standards
+- `docs/FUNCTION_SPECS.md` — function interface specs and macOS command research
+- JIRA: https://lilly-jira.atlassian.net/browse/WPSMOB-5282
+
+## Special function notes
+
+### ParseInput
+- Lives in section #3 (functions) but is CALLED between config and main, in section #4
+- Script invocation order: `ParseInput "$@"` then `main "$@"`
+- Three modes: `--manifest` (highest priority) → CLI `--flags` → Jamf `$4=="jamf=true"` → hardcoded arrays (fallback)
+- First source that provides data for an array wins. No merging across sources.
+- Pipe `|` is the delimiter for CLI flags and Jamf params
+
+### IdentifyLoginItemType
+- This is a DETECTOR, not a remover. It queries `sfltool dumpbtm` and returns a machine-parseable line: `TYPE=<type> PATH=<path> DISPOSITION=<flags>`
+- The caller routes to the correct removal function based on TYPE
+- Requires root (sfltool dumpbtm needs root)
+- Output format of sfltool is undocumented and varies by macOS version — parser MUST be defensive
+- Return TYPE=unknown rather than crashing on unexpected format
+
+### RemoveQuickLookPlugin
+- `qlmanage -r` (QuickLook reload) is called ONCE in main() AFTER the removal loop, NOT inside the function
+
+## What NOT to do
+- Do NOT use Python on endpoints (dev tooling is fine, endpoint code is bash-only)
+- Do NOT use `jq` (not installed on managed Macs)
+- Do NOT use Homebrew tools (not guaranteed on fleet)
+- Do NOT create nested/inner functions
+- Do NOT use `FunctionName() {` syntax — use `function FunctionName {`
+- Do NOT hardcode UIDs — discover them via `ListGraphicalUsers` or `id -u`
+- Do NOT skip the verify-after step on destructive actions
+- Do NOT use `rm -rf` — use `SafeRemovePath` which walks bottom-up with `find -depth`
+- Do NOT implement a `RemoveLoginItem()` action function — login items are removed by removing their underlying mechanism (use `IdentifyLoginItemType` to detect what that is)
+- Do NOT call `qlmanage -r` inside `RemoveQuickLookPlugin` — it goes in main() after the loop
