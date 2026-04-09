@@ -2209,6 +2209,138 @@ function RemoveFinderExtension {
 }
 #--------------------------------------------------------------------------------
 
+# @name RemoveQuickLookPlugin
+# @version 1.0.0
+# @approved true
+# @channels stable,beta
+# @branch core
+# @requires SafeRemovePath, /usr/bin/qlmanage
+#
+# RemoveQuickLookPlugin — Remove a QuickLook generator plugin (.qlgenerator bundle) from disk.
+#   Takes a filesystem path pointing to the .qlgenerator directory itself.
+#   Uses SafeRemovePath for removal. The qlmanage -r reload is called by main()
+#   AFTER all plugins are removed, not inside this function.
+#
+# Inputs (order-agnostic):
+#   $*  <path_to_qlgenerator> [--tolerant-missing] [--needs-root]
+#
+# Returns:
+#   0 = success (plugin removed, or absent with --tolerant-missing)
+#   1 = generic failure (SafeRemovePath missing, internal error)
+#   2 = bad input (missing arg, unknown flag, invalid path format, not .qlgenerator)
+#   3 = needs root (--needs-root specified but EUID != 0)
+#   4 = plugin not present on disk and NOT tolerant
+#   5 = operation failed (SafeRemovePath reported failure, or verify-after shows file still exists)
+#
+# Safety notes:
+#   - This function only removes the .qlgenerator directory from disk.
+#   - Does NOT call qlmanage -r; that is called once in main() after all removals.
+#   - Path must be absolute and end with .qlgenerator (case-sensitive).
+#   - SafeRemovePath handles bottom-up removal of directory bundles.
+function RemoveQuickLookPlugin {
+  set -f
+  local IFS=$' \t\n'
+
+  # Aligned logging prefixes
+  local fnw="${LOG_FN_WIDTH:-24}" lvw="${LOG_LVL_WIDTH:-10}"
+  local my_echo_prefix="${ECHO_PREFIX:-}$(printf "%-*s" "$fnw" "RemoveQuickLookPlugin() - ")"
+  local my_vrb_prefix="$(printf "%-*s" "$lvw" "INFO:")"
+  local my_err_prefix="$(printf "%-*s" "$lvw" "ERROR:")"
+  local my_dbg_prefix="$(printf "%-*s" "$lvw" "DEBUG:")"
+
+  # Order-agnostic argument parsing with duplicate detection
+  local tolerant=false needs_root=false ql_path=""
+  if (( $# == 0 || $# > 3 )); then
+    echo "${my_echo_prefix}${my_err_prefix}Bad input: expected <path> [--tolerant-missing] [--needs-root]. Got $# args."
+    return 2
+  fi
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      --tolerant-missing)
+        if [[ $tolerant == true ]]; then
+          echo "${my_echo_prefix}${my_err_prefix}Bad input: duplicate --tolerant-missing flag."
+          return 2
+        fi
+        tolerant=true ;;
+      --needs-root)
+        if [[ $needs_root == true ]]; then
+          echo "${my_echo_prefix}${my_err_prefix}Bad input: duplicate --needs-root flag."
+          return 2
+        fi
+        needs_root=true ;;
+      -*)
+        echo "${my_echo_prefix}${my_err_prefix}Bad input: unknown flag '$arg'."
+        return 2 ;;
+      *)
+        if [[ -n "$ql_path" ]]; then
+          echo "${my_echo_prefix}${my_err_prefix}Bad input: multiple non-flag arguments."
+          return 2
+        fi
+        ql_path="$arg" ;;
+    esac
+  done
+
+  # Root gate (opt-in)
+  if $needs_root && [[ $EUID -ne 0 ]]; then
+    echo "${my_echo_prefix}${my_err_prefix}Needs root: run as sudo/root."
+    return 3
+  fi
+
+  # Tool presence check
+  local SAFEREMOVE_BIN="SafeRemovePath"
+  if ! type -t "$SAFEREMOVE_BIN" &>/dev/null; then
+    echo "${my_echo_prefix}${my_err_prefix}Missing required function: $SAFEREMOVE_BIN"
+    return 1
+  fi
+
+  # Validate path is absolute
+  if [[ ! "$ql_path" =~ ^/ ]]; then
+    echo "${my_echo_prefix}${my_err_prefix}Invalid path: must be absolute. Got: $ql_path"
+    return 2
+  fi
+
+  # Validate path ends with .qlgenerator (case-sensitive)
+  if [[ ! "$ql_path" =~ \.qlgenerator$ ]]; then
+    echo "${my_echo_prefix}${my_err_prefix}Invalid path: must end with .qlgenerator. Got: $ql_path"
+    return 2
+  fi
+
+  # Presence check (path must exist on disk)
+  if [[ ! -e "$ql_path" ]]; then
+    if $tolerant; then
+      [[ ${VERBOSE:-false} == true || ${DEBUG:-false} == true ]] && \
+        echo "${my_echo_prefix}${my_vrb_prefix}Plugin not present on disk (tolerant-missing): $ql_path"
+      return 0
+    else
+      echo "${my_echo_prefix}${my_err_prefix}Plugin not present on disk: $ql_path"
+      return 4
+    fi
+  fi
+  [[ ${DEBUG:-false} == true ]] && echo "${my_echo_prefix}${my_dbg_prefix}Plugin present. Proceeding to remove."
+
+  # Step 1: Remove the plugin using SafeRemovePath
+  [[ ${VERBOSE:-false} == true || ${DEBUG:-false} == true ]] && \
+    echo "${my_echo_prefix}${my_vrb_prefix}Removing plugin: $ql_path"
+  local remove_rc=0
+  "$SAFEREMOVE_BIN" "$ql_path" || remove_rc=$?
+  if (( remove_rc != 0 )); then
+    echo "${my_echo_prefix}${my_err_prefix}SafeRemovePath failed with rc $remove_rc for: $ql_path"
+    return 5
+  fi
+
+  # Step 2: Verify-after (path should no longer exist)
+  if [[ -e "$ql_path" ]]; then
+    echo "${my_echo_prefix}${my_err_prefix}Plugin still exists after removal attempt: $ql_path"
+    return 5
+  fi
+
+  [[ ${VERBOSE:-false} == true || ${DEBUG:-false} == true ]] && \
+    echo "${my_echo_prefix}${my_vrb_prefix}Plugin successfully removed: $ql_path"
+  return 0
+}
+#--------------------------------------------------------------------------------
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Run
 # ──────────────────────────────────────────────────────────────────────────────
