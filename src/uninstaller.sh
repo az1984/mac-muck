@@ -2341,6 +2341,149 @@ function RemoveQuickLookPlugin {
 }
 #--------------------------------------------------------------------------------
 
+# @name RemovePrivilegedHelper
+# @version 1.0.0
+# @approved true
+# @channels stable,beta
+# @branch core
+# @requires SafeDelete
+#
+# RemovePrivilegedHelper — Remove a PrivilegedHelperTool binary from /Library/PrivilegedHelperTools/.
+#   Thin wrapper around SafeDelete with guards:
+#   - Path must be under /Library/PrivilegedHelperTools/ (refuses to operate elsewhere)
+#   - Filename must be valid reverse-DNS format (≥3 labels)
+#   - The associated LaunchDaemon plist should be unloaded first via UnloadAndRemoveLaunchDaemon.
+#
+# Inputs (order-agnostic):
+#   $*  <path> [--tolerant-missing] [--needs-root]
+#
+# Returns:
+#   0 = success (helper removed, or absent with --tolerant-missing)
+#   1 = generic failure (SafeDelete missing, internal error)
+#   2 = bad input (missing arg, unknown flag, invalid path format, not under PrivilegedHelperTools, invalid filename)
+#   3 = needs root (--needs-root specified but EUID != 0)
+#   4 = helper not present and NOT tolerant
+#   5 = operation failed (SafeDelete reported failure, or verify-after shows file still exists)
+#
+# Safety notes:
+#   - This function only removes the helper binary from disk.
+#   - Does NOT remove the associated LaunchDaemon plist; that should be done first via UnloadAndRemoveLaunchDaemon.
+#   - Path must be absolute and under /Library/PrivilegedHelperTools/ (exact match, not similar names).
+#   - Filename is validated to reverse-DNS format with ≥3 labels.
+#   - SafeDelete handles non-recursive deletion of the single file.
+function RemovePrivilegedHelper {
+  set -f
+  local IFS=$' \t\n'
+
+  # Aligned logging prefixes
+  local fnw="${LOG_FN_WIDTH:-24}" lvw="${LOG_LVL_WIDTH:-10}"
+  local my_echo_prefix="${ECHO_PREFIX:-}$(printf "%-*s" "$fnw" "RemovePrivilegedHelper - ")"
+  local my_vrb_prefix="$(printf "%-*s" "$lvw" "INFO:")"
+  local my_err_prefix="$(printf "%-*s" "$lvw" "ERROR:")"
+  local my_dbg_prefix="$(printf "%-*s" "$lvw" "DEBUG:")"
+
+  # Order-agnostic argument parsing with duplicate detection
+  local tolerant=false needs_root=false helper_path=""
+  if (( $# == 0 || $# > 3 )); then
+    echo "${my_echo_prefix}${my_err_prefix}Bad input: expected <path> [--tolerant-missing] [--needs-root]. Got $# args."
+    return 2
+  fi
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      --tolerant-missing)
+        if [[ $tolerant == true ]]; then
+          echo "${my_echo_prefix}${my_err_prefix}Bad input: duplicate --tolerant-missing flag."
+          return 2
+        fi
+        tolerant=true ;;
+      --needs-root)
+        if [[ $needs_root == true ]]; then
+          echo "${my_echo_prefix}${my_err_prefix}Bad input: duplicate --needs-root flag."
+          return 2
+        fi
+        needs_root=true ;;
+      -*)
+        echo "${my_echo_prefix}${my_err_prefix}Bad input: unknown flag '$arg'."
+        return 2 ;;
+      *)
+        if [[ -n "$helper_path" ]]; then
+          echo "${my_echo_prefix}${my_err_prefix}Bad input: multiple non-flag arguments."
+          return 2
+        fi
+        helper_path="$arg" ;;
+    esac
+  done
+
+  # Root gate (opt-in)
+  if $needs_root && [[ $EUID -ne 0 ]]; then
+    echo "${my_echo_prefix}${my_err_prefix}Needs root: run as sudo/root."
+    return 3
+  fi
+
+  # Tool presence check
+  local SAFEDELETE_BIN="SafeDelete"
+  if ! type -t "$SAFEDELETE_BIN" &>/dev/null; then
+    echo "${my_echo_prefix}${my_err_prefix}Missing required function: $SAFEDELETE_BIN"
+    return 1
+  fi
+
+  # Validate path is absolute
+  if [[ ! "$helper_path" =~ ^/ ]]; then
+    echo "${my_echo_prefix}${my_err_prefix}Invalid path: must be absolute. Got: $helper_path"
+    return 2
+  fi
+
+  # Validate path is under /Library/PrivilegedHelperTools/ (exact directory match)
+  local helper_dir="/Library/PrivilegedHelperTools"
+  if [[ ! "$helper_path" =~ ^${helper_dir}/ ]]; then
+    echo "${my_echo_prefix}${my_err_prefix}Invalid path: must be under ${helper_dir}/. Got: $helper_path"
+    return 2
+  fi
+
+  # Extract filename and validate reverse-DNS format (≥3 labels)
+  local filename="${helper_path##*/}"
+  local id_re='^[A-Za-z][A-Za-z0-9]*(\.[A-Za-z][A-Za-z0-9_-]*){2,}$'
+  if [[ ! "$filename" =~ $id_re ]]; then
+    echo "${my_echo_prefix}${my_err_prefix}Invalid filename format (must be reverse-DNS with ≥3 labels): $filename"
+    return 2
+  fi
+
+  # Presence check (path must exist on disk)
+  if [[ ! -e "$helper_path" ]]; then
+    if $tolerant; then
+      [[ ${VERBOSE:-false} == true || ${DEBUG:-false} == true ]] && \
+        echo "${my_echo_prefix}${my_vrb_prefix}Helper not present on disk (tolerant-missing): $helper_path"
+      return 0
+    else
+      echo "${my_echo_prefix}${my_err_prefix}Helper not present on disk: $helper_path"
+      return 4
+    fi
+  fi
+  [[ ${DEBUG:-false} == true ]] && echo "${my_echo_prefix}${my_dbg_prefix}Helper present. Proceeding to remove."
+
+  # Step 1: Remove the helper using SafeDelete
+  [[ ${VERBOSE:-false} == true || ${DEBUG:-false} == true ]] && \
+    echo "${my_echo_prefix}${my_vrb_prefix}Removing helper: $helper_path"
+  local remove_rc=0
+  "$SAFEDELETE_BIN" "$helper_path" || remove_rc=$?
+  if (( remove_rc != 0 )); then
+    echo "${my_echo_prefix}${my_err_prefix}SafeDelete failed with rc $remove_rc for: $helper_path"
+    return 5
+  fi
+
+  # Step 2: Verify-after (path should no longer exist)
+  if [[ -e "$helper_path" ]]; then
+    echo "${my_echo_prefix}${my_err_prefix}Helper still exists after removal attempt: $helper_path"
+    return 5
+  fi
+
+  [[ ${VERBOSE:-false} == true || ${DEBUG:-false} == true ]] && \
+    echo "${my_echo_prefix}${my_vrb_prefix}Helper successfully removed: $helper_path"
+  return 0
+}
+#--------------------------------------------------------------------------------
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Run
 # ──────────────────────────────────────────────────────────────────────────────
