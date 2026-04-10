@@ -232,6 +232,71 @@ main() {
     fi
   done
 
+  # ── Remove Finder Sync Extensions (by bundle identifier; tolerant missing)
+  local finder_ext
+  for finder_ext in "${FINDER_EXTENSIONS_TO_REMOVE[@]}"; do
+    RemoveFinderExtension "$finder_ext" "--tolerant-missing"
+    rc=$?
+    if [[ $rc -eq 0 ]]; then
+      echo "${ECHO_PREFIX}Removed Finder extension: $finder_ext"
+      ((agent_success++))
+    else
+      echo "${ECHO_PREFIX}ERROR: Failed to remove Finder extension: $finder_ext (rc=$rc)" >&2
+      ((agent_fail++))
+    fi
+  done
+
+  # ── Remove QuickLook Plugins (by path to .qlgenerator bundle; tolerant missing)
+  local ql_plugin
+  for ql_plugin in "${QUICKLOOK_PLUGINS_TO_REMOVE[@]}"; do
+    RemoveQuickLookPlugin "$ql_plugin" "--tolerant-missing"
+    rc=$?
+    if [[ $rc -eq 0 ]]; then
+      echo "${ECHO_PREFIX}Removed QuickLook plugin: $ql_plugin"
+      ((remove_success++))
+    else
+      echo "${ECHO_PREFIX}ERROR: Failed to remove QuickLook plugin: $ql_plugin (rc=$rc)" >&2
+      ((remove_fail++))
+    fi
+  done
+
+  # ── Reload QuickLook subsystem (once, after all plugin removals)
+  local QL_RELOAD_BIN="/usr/bin/qlmanage"
+  if [[ -x "$QL_RELOAD_BIN" ]]; then
+    "$QL_RELOAD_BIN" -r >/dev/null 2>&1
+    echo "${ECHO_PREFIX}QuickLook subsystem reloaded"
+  else
+    echo "${ECHO_PREFIX}WARNING: qlmanage not found; skipping QuickLook reload" >&2
+  fi
+
+  # ── Remove Privileged Helper Tools (by path; tolerant missing)
+  local helper_path
+  for helper_path in "${PRIVILEGED_HELPERS_TO_REMOVE[@]}"; do
+    RemovePrivilegedHelper "$helper_path" "--tolerant-missing"
+    rc=$?
+    if [[ $rc -eq 0 ]]; then
+      echo "${ECHO_PREFIX}Removed Privileged Helper: $helper_path"
+      ((remove_success++))
+    else
+      echo "${ECHO_PREFIX}ERROR: Failed to remove Privileged Helper: $helper_path (rc=$rc)" >&2
+      ((remove_fail++))
+    fi
+  done
+
+  # ── Remove Login Items (by identifier; tolerant missing)
+  local login_item
+  for login_item in "${LOGIN_ITEMS_TO_REMOVE[@]}"; do
+    RemoveLoginItems "$login_item" "--tolerant-missing"
+    rc=$?
+    if [[ $rc -eq 0 ]]; then
+      echo "${ECHO_PREFIX}Removed login item: $login_item"
+      ((remove_success++))
+    else
+      echo "${ECHO_PREFIX}ERROR: Failed to remove login item: $login_item (rc=$rc)" >&2
+      ((remove_fail++))
+    fi
+  done
+
 	# Summary
 	echo "──────────────────────────────────────────────────────────────────────────────"
 	echo "${ECHO_PREFIX}Summary:"
@@ -239,8 +304,9 @@ main() {
 	echo "  Paths   : success=$remove_success failure=$remove_fail (missing-strict=$remove_missing_strict)"
   echo "  Profiles: success=$userrm_success failure=$userrm_fail"
 	echo "  Packages: success=$forget_success failure=$forget_fail (missing-strict=$forget_missing_strict)"
-  echo "  Agents  : success=$agent_success failure=$agent_fail"
-  echo "  Daemons : success=$daemon_success failure=$daemon_fail"
+	echo "  Agents  : success=$agent_success failure=$agent_fail (includes LaunchAgents, LaunchDaemons, Finder extensions)"
+	echo "  Daemons : success=$daemon_success failure=$daemon_fail"
+	echo "  Paths   : success=$remove_success failure=$remove_fail (includes QuickLook plugins, Privileged Helpers, Login Items)"
 
 	if [[ $quit_fail -eq 0 && $remove_fail -eq 0 && $userrm_fail -eq 0 && $forget_fail -eq 0 && $agent_fail -eq 0 && $daemon_fail -eq 0 ]]; then
 		echo "${ECHO_PREFIX}${APP_NAME} uninstall complete."
@@ -2945,6 +3011,203 @@ function ParseInput {
 
   # --- Fallback: no input source matched, keep hardcoded arrays ---
   [[ ${DEBUG:-false} == true ]] && echo "DEBUG: ParseInput — fallback to hardcoded arrays"
+  return 0
+}
+#--------------------------------------------------------------------------------
+
+# @name RemoveLoginItems
+# @version 1.0.0
+# @approved true
+# @channels stable,beta
+# @branch core
+# @requires IdentifyLoginItemType, UnloadAndRemoveLaunchDaemon, UnloadAndRemoveLaunchAgent, RemovePrivilegedHelper, SafeRemovePath
+#
+# RemoveLoginItems — Remove login/background items by auto-routing to the correct removal function.
+#   This is a wrapper function that:
+#   1. Calls IdentifyLoginItemType to detect the persistence mechanism type
+#   2. Routes to the appropriate removal function based on TYPE
+#
+#   Routing table:
+#     - daemon   → UnloadAndRemoveLaunchDaemon (constructs plist path)
+#     - agent    → UnloadAndRemoveLaunchAgent (constructs plist path)
+#     - helper   → RemovePrivilegedHelper (constructs helper binary path)
+#     - app      → SafeRemovePath (uses URL path from BTM)
+#     - login_item → SafeRemovePath (uses URL path from BTM)
+#     - unknown  → warns and skips
+#
+# Inputs (order-agnostic):
+#   $*  <identifier> [--tolerant-missing]
+#
+#   Where <identifier> is a reverse-DNS label (e.g., "corp.sap.privileges.helper").
+#
+# Returns:
+#   0 = success (item removed, or absent with --tolerant-missing)
+#   1 = generic failure (IdentifyLoginItemType failed, internal error)
+#   2 = bad input (missing identifier, invalid format, unknown flag)
+#   3 = needs root (IdentifyLoginItemType requires root)
+#   4 = identifier not found in BTM database and NOT tolerant
+#   5 = removal operation failed (type-specific removal failed)
+#
+# Safety notes:
+#   - This function does NOT directly remove anything; it delegates to type-specific functions.
+#   - For daemon/agent types, constructs the plist path from the identifier.
+#   - For helper type, constructs the helper binary path under /Library/PrivilegedHelperTools/.
+#   - For app/login_item types, uses the URL path from BTM output (may be empty for orphaned entries).
+#   - Unknown types are logged as warnings and skipped (rc 5).
+function RemoveLoginItems {
+  set -f
+  local IFS=$' \t\n'
+
+  # Aligned logging prefixes
+  local fnw="${LOG_FN_WIDTH:-24}" lvw="${LOG_LVL_WIDTH:-10}"
+  local my_echo_prefix="${ECHO_PREFIX:-}$(printf "%-*s" "$fnw" "RemoveLoginItems()   - ")"
+  local my_vrb_prefix="$(printf "%-*s" "$lvw" "INFO:")"
+  local my_err_prefix="$(printf "%-*s" "$lvw" "ERROR:")"
+  local my_dbg_prefix="$(printf "%-*s" "$lvw" "DEBUG:")"
+
+  # Order-agnostic argument parsing with duplicate detection
+  local tolerant=false identifier=""
+  if (( $# == 0 || $# > 2 )); then
+    echo "${my_echo_prefix}${my_err_prefix}Bad input: expected <identifier> [--tolerant-missing]. Got $# args."
+    return 2
+  fi
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      --tolerant-missing)
+        if [[ $tolerant == true ]]; then
+          echo "${my_echo_prefix}${my_err_prefix}Bad input: duplicate --tolerant-missing flag."
+          return 2
+        fi
+        tolerant=true ;;
+      -*)
+        echo "${my_echo_prefix}${my_err_prefix}Bad input: unknown flag '$arg'."
+        return 2 ;;
+      *)
+        if [[ -n "$identifier" ]]; then
+          echo "${my_echo_prefix}${my_err_prefix}Bad input: multiple non-flag arguments."
+          return 2
+        fi
+        identifier="$arg" ;;
+    esac
+  done
+
+  # Validate identifier is present
+  if [[ -z "$identifier" ]]; then
+    echo "${my_echo_prefix}${my_err_prefix}Bad input: missing identifier argument."
+    return 2
+  fi
+
+  # Tool presence check
+  local IDENTIFY_BIN="IdentifyLoginItemType"
+  if ! type -t "$IDENTIFY_BIN" &>/dev/null; then
+    echo "${my_echo_prefix}${my_err_prefix}Missing required function: $IDENTIFY_BIN"
+    return 1
+  fi
+
+  # Validate identifier format (reverse-DNS with ≥2 labels)
+  local id_re='^[A-Za-z][A-Za-z0-9]*(\.[A-Za-z][A-Za-z0-9_-]*)+$'
+  if [[ ! "$identifier" =~ $id_re ]]; then
+    echo "${my_echo_prefix}${my_err_prefix}Invalid identifier format: $identifier"
+    return 2
+  fi
+
+  # Step 1: Identify the login item type
+  [[ ${DEBUG:-false} == true ]] && echo "${my_echo_prefix}${my_dbg_prefix}Identifying login item: $identifier"
+  local identify_output
+  identify_output=$("$IDENTIFY_BIN" "$identifier" $($tolerant && echo "--tolerant-missing") 2>&1)
+  local identify_rc=$?
+
+  # Handle not found
+  if [[ $identify_rc -eq 4 ]]; then
+    if $tolerant; then
+      [[ ${VERBOSE:-false} == true || ${DEBUG:-false} == true ]] && \
+        echo "${my_echo_prefix}${my_vrb_prefix}Login item not found (tolerant-missing): $identifier"
+      return 0
+    else
+      echo "${my_echo_prefix}${my_err_prefix}Login item not found: $identifier"
+      return 4
+    fi
+  fi
+
+  # Handle other errors from IdentifyLoginItemType
+  if [[ $identify_rc -ne 0 ]]; then
+    echo "${my_echo_prefix}${my_err_prefix}IdentifyLoginItemType failed with rc $identify_rc for: $identifier"
+    return 1
+  fi
+
+  [[ ${DEBUG:-false} == true ]] && echo "${my_echo_prefix}${my_dbg_prefix}Identify output: $identify_output"
+
+  # Step 2: Parse TYPE= PATH= DISPOSITION= from output
+  local type_output="" path_output="" disposition_output=""
+  type_output=$(echo "$identify_output" | /usr/bin/grep -oP 'TYPE=\K[^ ]+' || echo "")
+  path_output=$(echo "$identify_output" | /usr/bin/grep -oP 'PATH=\K[^ ]+' || echo "")
+  disposition_output=$(echo "$identify_output" | /usr/bin/grep -oP 'DISPOSITION=\K.*' || echo "")
+
+  if [[ -z "$type_output" ]]; then
+    echo "${my_echo_prefix}${my_err_prefix}Failed to parse TYPE from IdentifyLoginItemType output: $identify_output"
+    return 1
+  fi
+
+  [[ ${DEBUG:-false} == true ]] && echo "${my_echo_prefix}${my_dbg_prefix}Parsed: TYPE=$type_output PATH=$path_output DISPOSITION=$disposition_output"
+
+  # Step 3: Route to appropriate removal function based on type
+  local removal_rc=0
+
+  case "$type_output" in
+    daemon)
+      # Construct LaunchDaemon plist path
+      local daemon_plist="/Library/LaunchDaemons/${identifier}.plist"
+      [[ ${VERBOSE:-false} == true || ${DEBUG:-false} == true ]] && \
+        echo "${my_echo_prefix}${my_vrb_prefix}Routing to UnloadAndRemoveLaunchDaemon: $daemon_plist"
+      UnloadAndRemoveLaunchDaemon "$identifier" $($tolerant && echo "--tolerant-missing")
+      removal_rc=$?
+      ;;
+    agent)
+      # Construct LaunchAgent plist path
+      local agent_plist="/Library/LaunchAgents/${identifier}.plist"
+      [[ ${VERBOSE:-false} == true || ${DEBUG:-false} == true ]] && \
+        echo "${my_echo_prefix}${my_vrb_prefix}Routing to UnloadAndRemoveLaunchAgent: $agent_plist"
+      UnloadAndRemoveLaunchAgent "$identifier" $($tolerant && echo "--tolerant-missing")
+      removal_rc=$?
+      ;;
+    helper)
+      # Construct PrivilegedHelperTool binary path
+      local helper_bin="/Library/PrivilegedHelperTools/${identifier}"
+      [[ ${VERBOSE:-false} == true || ${DEBUG:-false} == true ]] && \
+        echo "${my_echo_prefix}${my_vrb_prefix}Routing to RemovePrivilegedHelper: $helper_bin"
+      RemovePrivilegedHelper "$helper_bin" $($tolerant && echo "--tolerant-missing")
+      removal_rc=$?
+      ;;
+    app|login_item)
+      # Use URL path from BTM output (may be empty for orphaned entries)
+      if [[ -z "$path_output" ]]; then
+        echo "${my_echo_prefix}${my_err_prefix}No path available for app/login_item type: $identifier"
+        return 5
+      fi
+      [[ ${VERBOSE:-false} == true || ${DEBUG:-false} == true ]] && \
+        echo "${my_echo_prefix}${my_vrb_prefix}Routing to SafeRemovePath: $path_output"
+      SafeRemovePath "$path_output" $($tolerant && echo "--tolerant-missing")
+      removal_rc=$?
+      ;;
+    unknown)
+      echo "${my_echo_prefix}${my_err_prefix}Unknown login item type for: $identifier (DISPOSITION=$disposition_output)"
+      return 5
+      ;;
+    *)
+      echo "${my_echo_prefix}${my_err_prefix}Unrecognized type '$type_output' for: $identifier"
+      return 5
+      ;;
+  esac
+
+  # Step 4: Check removal result
+  if [[ $removal_rc -ne 0 ]]; then
+    echo "${my_echo_prefix}${my_err_prefix}Removal failed for login item: $identifier (rc=$removal_rc)"
+    return 5
+  fi
+
+  [[ ${VERBOSE:-false} == true || ${DEBUG:-false} == true ]] && \
+    echo "${my_echo_prefix}${my_vrb_prefix}Login item successfully removed: $identifier"
   return 0
 }
 #--------------------------------------------------------------------------------
