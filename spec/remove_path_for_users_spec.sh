@@ -1,55 +1,25 @@
-Describe 'UnloadAndRemoveLaunchAgent'
+Describe 'RemovePathForUsers'
 
   # ─────────────────────────═══════════════════════════════════════
   # Bad input (rc 2)
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 2 when no arguments provided'
-    When call UnloadAndRemoveLaunchAgent
+    When call RemovePathForUsers
     The status should eq 2
     The output should include "Bad input"
   End
 
-  It 'returns 2 when given an invalid label format (single label)'
-    When call UnloadAndRemoveLaunchAgent "notreverse"
+  It 'returns 2 when given an unknown flag'
+    When call RemovePathForUsers "Library/Caches/test" --bogus
     The status should eq 2
-    The output should include "Invalid label"
+    The output should include "Unknown flag"
   End
 
-  It 'returns 2 when given an invalid label format (only 2 labels)'
-    When call UnloadAndRemoveLaunchAgent "not-reverse-dns"
-    The status should eq 2
-    The output should include "Invalid label"
-  End
-
-  It 'returns 2 when label starts with number'
-    When call UnloadAndRemoveLaunchAgent "1com.vendor.agent"
-    The status should eq 2
-    The output should include "Invalid label"
-  End
-
-  It 'returns 2 with duplicate --tolerant-missing flag'
-    When call UnloadAndRemoveLaunchAgent --tolerant-missing --tolerant-missing "com.vendor.app.agent"
+  It 'returns 2 when given duplicate flags'
+    When call RemovePathForUsers "Library/Caches/test" --tolerant-missing --tolerant-missing
     The status should eq 2
     The output should include "duplicate"
-  End
-
-  It 'returns 2 with duplicate --needs-root flag'
-    When call UnloadAndRemoveLaunchAgent --needs-root --needs-root "com.vendor.app.agent"
-    The status should eq 2
-    The output should include "duplicate"
-  End
-
-  It 'returns 2 with unknown flag'
-    When call UnloadAndRemoveLaunchAgent --bogus "com.vendor.app.agent"
-    The status should eq 2
-    The output should include "unknown flag"
-  End
-
-  It 'returns 2 with multiple non-flag arguments'
-    When call UnloadAndRemoveLaunchAgent "com.vendor.app.agent" "com.vendor.app.other"
-    The status should eq 2
-    The output should include "multiple non-flag"
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -61,120 +31,111 @@ Describe 'UnloadAndRemoveLaunchAgent'
   End
 
   # ─────────────────────────═══════════════════════════════════════
-  # Tolerant missing (rc 0 when absent)
+  # Path validation tests
   # ─────────────────────────═══════════════════════════════════════
 
-  It 'returns 0 when no plists found and --tolerant-missing is set'
-    When call UnloadAndRemoveLaunchAgent --tolerant-missing "com.nonexistent.app.agent"
-    The status should eq 0
+  It 'returns 2 when relative path is empty (leading slash stripped)'
+    When call RemovePathForUsers "/"
+    The status should eq 2
+    The output should include "empty"
   End
 
-  It 'returns 0 when no graphical users exist and --tolerant-missing is set'
-    Skip "Requires mocking ListGraphicalUsers to return empty"
-  End
-
-  # ─────────────────────────═══════════════════════════════════════
-  # Strict missing (rc 4 when absent)
-  # ─────────────────────────═══════════════════════════════════════
-
-  It 'returns 4 when no plists found without --tolerant-missing'
-    When call UnloadAndRemoveLaunchAgent "com.nonexistent.app.agent"
-    The status should eq 4
-  End
-
-  It 'returns 4 when no graphical users exist without --tolerant-missing'
-    Skip "Requires mocking ListGraphicalUsers to return empty"
+  It 'strips leading slash from relative path'
+    # Path "/Library/Caches/test" should become "Library/Caches/test"
+    Skip "Requires verifying path normalization"
   End
 
   # ─────────────────────────═══════════════════════════════════════
-  # Happy path tests
+  # User discovery tests
   # ─────────────────────────═══════════════════════════════════════
 
-  It 'returns 0 when system agent plist is successfully removed'
-    Skip "Requires mocking launchctl and SafeDelete"
+  It 'discovers users via ListGraphicalUsers when none provided'
+    Skip "Requires mocking ListGraphicalUsers"
   End
 
-  It 'returns 0 when user agent plist is successfully removed'
-    Skip "Requires mocking ListGraphicalUsers, launchctl and SafeDelete"
-  End
-
-  It 'returns 0 when agent plist exists in both system and user locations'
-    Skip "Requires mocking multiple plist locations"
+  It 'uses explicitly provided usernames instead of discovery'
+    Skip "Requires mocking ListGraphicalUsers and verifying explicit users used"
   End
 
   # ─────────────────────────═══════════════════════════════════════
-  # Verify-after failure tests (rc 5)
+  # Shared user protection tests
   # ─────────────────────────═══════════════════════════════════════
 
-  It 'returns 5 when agent still running after bootout'
-    Skip "Requires mocking VerifyServiceUnloaded to return still running"
+  It 'skips user named Shared with warning'
+    Skip "Requires verifying Shared user is skipped"
   End
 
-  It 'returns 5 when SafeDelete fails to remove plist'
-    Skip "Requires mocking SafeDelete failure"
+  It 'skips path that resolves to /Users/Shared exactly'
+    Skip "Requires verifying /Users/Shared is refused"
   End
 
-  It 'returns 5 when plist still present after deletion attempt'
-    Skip "Requires mocking plist persistence after delete"
+  # ─────────────────────────═══════════════════════════════════════
+  # Home directory resolution tests
+  # ─────────────────────────═══════════════════════════════════════
+
+  It 'returns 1 when user has no home directory'
+    Skip "Requires mocking user without home directory"
   End
 
-  It 'returns 5 when multiple operations fail'
-    Skip "Requires mocking multiple operation failures"
+  It 'falls back to /Users/<username> when eval ~user fails'
+    Skip "Requires mocking eval failure"
+  End
+
+  # ─────────────────────────═══════════════════════════════════════
+  # Removal tests
+  # ─────────────────────────═══════════════════════════════════════
+
+  It 'returns 0 when successfully removes path for all users'
+    Skip "Requires mocking SafeRemovePath and multiple users"
+  End
+
+  It 'returns 5 when removal fails for one or more users'
+    Skip "Requires mocking SafeRemovePath failure"
+  End
+
+  It 'returns 0 when path is absent for all users with --tolerant-missing'
+    Skip "Requires mocking SafeRemovePath with tolerant-missing"
   End
 
   # ─────────────────────────═══════════════════════════════════════
   # Tool presence (rc 1)
   # ─────────────────────────═══════════════════════════════════════
 
-  It 'returns 1 when launchctl is not found'
-    Skip "Requires mocking missing launchctl binary"
-  End
-
   It 'returns 1 when ListGraphicalUsers function is not defined'
     Skip "Requires mocking missing ListGraphicalUsers function"
   End
 
-  It 'returns 1 when VerifyServiceUnloaded function is not defined'
-    Skip "Requires mocking missing VerifyServiceUnloaded function"
-  End
-
-  It 'returns 1 when SafeDelete function is not defined'
-    Skip "Requires mocking missing SafeDelete function"
+  It 'returns 1 when SafeRemovePath function is not defined'
+    Skip "Requires mocking missing SafeRemovePath function"
   End
 
   # ─────────────────────────═══════════════════════════════════════
   # Order-agnostic arguments
   # ─────────────────────────═══════════════════════════════════════
 
-  It 'accepts --tolerant-missing before the label'
-    When call UnloadAndRemoveLaunchAgent --tolerant-missing "com.nonexistent.app.agent"
+  It 'accepts flags after the relative path'
+    When call RemovePathForUsers "Library/Caches/test" --tolerant-missing
     The status should eq 0
   End
 
-  It 'accepts --tolerant-missing after the label'
-    When call UnloadAndRemoveLaunchAgent "com.nonexistent.app.agent" --tolerant-missing
-    The status should eq 0
+  It 'accepts explicit usernames after the relative path'
+    Skip "Requires mocking ListGraphicalUsers and verifying explicit users used"
   End
 
-  It 'accepts --needs-root flag before the label'
-    When call UnloadAndRemoveLaunchAgent --needs-root "com.vendor.app.agent"
-    The status should eq 0
+  It 'accepts flags and usernames in any order'
+    Skip "Requires mocking ListGraphicalUsers and verifying mixed args"
   End
 
   # ─────────────────────────═══════════════════════════════════════
   # Edge cases
   # ─────────────────────────═══════════════════════════════════════
 
-  It 'skips users when UID cannot be resolved'
-    Skip "Requires mocking user without resolvable UID"
+  It 'handles relative paths with spaces correctly'
+    Skip "Requires creating test path with spaces"
   End
 
-  It 'handles labels with underscores correctly'
-    Skip "Requires mocking launchctl with underscore label"
-  End
-
-  It 'handles labels with hyphens correctly'
-    Skip "Requires mocking launchctl with hyphen label"
+  It 'handles relative paths with wildcards correctly'
+    Skip "Requires creating test path with wildcards"
   End
 
 End

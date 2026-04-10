@@ -1,55 +1,31 @@
-Describe 'UnloadAndRemoveLaunchAgent'
+Describe 'SafeRemovePath'
 
   # ─────────────────────────═══════════════════════════════════════
   # Bad input (rc 2)
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 2 when no arguments provided'
-    When call UnloadAndRemoveLaunchAgent
+    When call SafeRemovePath
     The status should eq 2
     The output should include "Bad input"
   End
 
-  It 'returns 2 when given an invalid label format (single label)'
-    When call UnloadAndRemoveLaunchAgent "notreverse"
+  It 'returns 2 when given too many arguments'
+    When call SafeRemovePath "/path/to/remove" "extra-arg"
     The status should eq 2
-    The output should include "Invalid label"
+    The output should include "Bad input"
   End
 
-  It 'returns 2 when given an invalid label format (only 2 labels)'
-    When call UnloadAndRemoveLaunchAgent "not-reverse-dns"
+  It 'returns 2 when given an unknown flag'
+    When call SafeRemovePath "/path/to/remove" --bogus
     The status should eq 2
-    The output should include "Invalid label"
+    The output should include "Unknown flag"
   End
 
-  It 'returns 2 when label starts with number'
-    When call UnloadAndRemoveLaunchAgent "1com.vendor.agent"
-    The status should eq 2
-    The output should include "Invalid label"
-  End
-
-  It 'returns 2 with duplicate --tolerant-missing flag'
-    When call UnloadAndRemoveLaunchAgent --tolerant-missing --tolerant-missing "com.vendor.app.agent"
+  It 'returns 2 when given duplicate flags'
+    When call SafeRemovePath "/path/to/remove" --tolerant-missing --tolerant-missing
     The status should eq 2
     The output should include "duplicate"
-  End
-
-  It 'returns 2 with duplicate --needs-root flag'
-    When call UnloadAndRemoveLaunchAgent --needs-root --needs-root "com.vendor.app.agent"
-    The status should eq 2
-    The output should include "duplicate"
-  End
-
-  It 'returns 2 with unknown flag'
-    When call UnloadAndRemoveLaunchAgent --bogus "com.vendor.app.agent"
-    The status should eq 2
-    The output should include "unknown flag"
-  End
-
-  It 'returns 2 with multiple non-flag arguments'
-    When call UnloadAndRemoveLaunchAgent "com.vendor.app.agent" "com.vendor.app.other"
-    The status should eq 2
-    The output should include "multiple non-flag"
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -61,103 +37,95 @@ Describe 'UnloadAndRemoveLaunchAgent'
   End
 
   # ─────────────────────────═══════════════════════════════════════
-  # Tolerant missing (rc 0 when absent)
+  # Missing path tests
   # ─────────────────────────═══════════════════════════════════════
 
-  It 'returns 0 when no plists found and --tolerant-missing is set'
-    When call UnloadAndRemoveLaunchAgent --tolerant-missing "com.nonexistent.app.agent"
+  It 'returns 4 when path does not exist without --tolerant-missing'
+    When call SafeRemovePath "/nonexistent/path"
+    The status should eq 4
+    The output should include "Absent"
+  End
+
+  It 'returns 0 when path does not exist with --tolerant-missing'
+    When call SafeRemovePath "/nonexistent/path" --tolerant-missing
     The status should eq 0
   End
 
-  It 'returns 0 when no graphical users exist and --tolerant-missing is set'
-    Skip "Requires mocking ListGraphicalUsers to return empty"
+  # ─────────────────────────═══════════════════════════════════════
+  # Symlink removal tests
+  # ─────────────────────────═══════════════════════════════════════
+
+  It 'returns 0 when successfully removes a symlink'
+    Skip "Requires creating test symlink and mocking UnlinkSymlink"
+  End
+
+  It 'returns 5 when symlink removal fails'
+    Skip "Requires mocking UnlinkSymlink failure"
   End
 
   # ─────────────────────────═══════════════════════════════════════
-  # Strict missing (rc 4 when absent)
+  # Directory removal tests
   # ─────────────────────────═══════════════════════════════════════
 
-  It 'returns 4 when no plists found without --tolerant-missing'
-    When call UnloadAndRemoveLaunchAgent "com.nonexistent.app.agent"
-    The status should eq 4
+  It 'returns 0 when successfully removes an empty directory'
+    Skip "Requires creating test directory and mocking RemoveDir"
   End
 
-  It 'returns 4 when no graphical users exist without --tolerant-missing'
-    Skip "Requires mocking ListGraphicalUsers to return empty"
+  It 'returns 0 when successfully removes a directory tree (bottom-up)'
+    Skip "Requires creating nested test directories"
   End
 
-  # ─────────────────────────═══════════════════════════════════════
-  # Happy path tests
-  # ─────────────────────────═══════════════════════════════════════
-
-  It 'returns 0 when system agent plist is successfully removed'
-    Skip "Requires mocking launchctl and SafeDelete"
-  End
-
-  It 'returns 0 when user agent plist is successfully removed'
-    Skip "Requires mocking ListGraphicalUsers, launchctl and SafeDelete"
-  End
-
-  It 'returns 0 when agent plist exists in both system and user locations'
-    Skip "Requires mocking multiple plist locations"
+  It 'returns 5 when directory removal fails'
+    Skip "Requires mocking RemoveDir failure"
   End
 
   # ─────────────────────────═══════════════════════════════════════
-  # Verify-after failure tests (rc 5)
+  # File removal tests
   # ─────────────────────────═══════════════════════════════════════
 
-  It 'returns 5 when agent still running after bootout'
-    Skip "Requires mocking VerifyServiceUnloaded to return still running"
+  It 'returns 0 when successfully removes a single file'
+    Skip "Requires creating test file and mocking SafeDelete"
   End
 
-  It 'returns 5 when SafeDelete fails to remove plist'
+  It 'returns 5 when file removal fails'
     Skip "Requires mocking SafeDelete failure"
   End
 
-  It 'returns 5 when plist still present after deletion attempt'
-    Skip "Requires mocking plist persistence after delete"
+  # ─────────────────────────═══════════════════════════════════════
+  # Verify-after tests
+  # ─────────────────────────═══════════════════════════════════════
+
+  It 'returns 5 when path still exists after removal attempt'
+    Skip "Requires mocking removal to succeed but path persists"
   End
 
-  It 'returns 5 when multiple operations fail'
-    Skip "Requires mocking multiple operation failures"
+  It 'returns 5 when one or more delete steps fail in directory tree'
+    Skip "Requires mocking partial failure in tree removal"
   End
 
   # ─────────────────────────═══════════════════════════════════════
   # Tool presence (rc 1)
   # ─────────────────────────═══════════════════════════════════════
 
-  It 'returns 1 when launchctl is not found'
-    Skip "Requires mocking missing launchctl binary"
+  It 'returns 1 when find is not found'
+    Skip "Requires mocking missing find binary"
   End
 
-  It 'returns 1 when ListGraphicalUsers function is not defined'
-    Skip "Requires mocking missing ListGraphicalUsers function"
-  End
-
-  It 'returns 1 when VerifyServiceUnloaded function is not defined'
-    Skip "Requires mocking missing VerifyServiceUnloaded function"
-  End
-
-  It 'returns 1 when SafeDelete function is not defined'
-    Skip "Requires mocking missing SafeDelete function"
+  It 'returns 1 when realpath is not found'
+    Skip "Requires mocking missing realpath binary"
   End
 
   # ─────────────────────────═══════════════════════════════════════
   # Order-agnostic arguments
   # ─────────────────────────═══════════════════════════════════════
 
-  It 'accepts --tolerant-missing before the label'
-    When call UnloadAndRemoveLaunchAgent --tolerant-missing "com.nonexistent.app.agent"
+  It 'accepts flags before the path'
+    When call SafeRemovePath --tolerant-missing "/nonexistent/path"
     The status should eq 0
   End
 
-  It 'accepts --tolerant-missing after the label'
-    When call UnloadAndRemoveLaunchAgent "com.nonexistent.app.agent" --tolerant-missing
-    The status should eq 0
-  End
-
-  It 'accepts --needs-root flag before the label'
-    When call UnloadAndRemoveLaunchAgent --needs-root "com.vendor.app.agent"
+  It 'accepts flags after the path'
+    When call SafeRemovePath "/nonexistent/path" --tolerant-missing
     The status should eq 0
   End
 
@@ -165,16 +133,16 @@ Describe 'UnloadAndRemoveLaunchAgent'
   # Edge cases
   # ─────────────────────────═══════════════════════════════════════
 
-  It 'skips users when UID cannot be resolved'
-    Skip "Requires mocking user without resolvable UID"
+  It 'handles broken symlinks correctly'
+    Skip "Requires creating broken symlink test case"
   End
 
-  It 'handles labels with underscores correctly'
-    Skip "Requires mocking launchctl with underscore label"
+  It 'handles paths with spaces correctly'
+    Skip "Requires creating test path with spaces"
   End
 
-  It 'handles labels with hyphens correctly'
-    Skip "Requires mocking launchctl with hyphen label"
+  It 'handles paths with special characters correctly'
+    Skip "Requires creating test path with special characters"
   End
 
 End

@@ -1,121 +1,115 @@
-Describe 'DisableLaunchDaemon'
+Describe 'SafeDelete'
 
   # ─────────────────────────═══════════════════════════════════════
   # Bad input (rc 2)
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 2 when no arguments provided'
-    When call DisableLaunchDaemon
+    When call SafeDelete
     The status should eq 2
     The output should include "Bad input"
   End
 
-  It 'returns 2 when given an invalid label format (single label)'
-    When call DisableLaunchDaemon "notreverse"
+  It 'returns 2 when given too many arguments'
+    When call SafeDelete "/path/to/delete" "extra-arg"
     The status should eq 2
-    The output should include "Invalid label"
+    The output should include "Bad input"
   End
 
-  It 'returns 2 when given an invalid label format (only 2 labels)'
-    When call DisableLaunchDaemon "not-reverse-dns"
+  It 'returns 2 when given an unknown flag'
+    When call SafeDelete "/path/to/delete" --bogus
     The status should eq 2
-    The output should include "Invalid label"
+    The output should include "Unknown flag"
   End
 
-  It 'returns 2 when label starts with number'
-    When call DisableLaunchDaemon "1com.vendor.daemon"
-    The status should eq 2
-    The output should include "Invalid label"
-  End
-
-  It 'returns 2 with duplicate --tolerant-missing flag'
-    When call DisableLaunchDaemon --tolerant-missing --tolerant-missing "com.vendor.app.daemon"
+  It 'returns 2 when given duplicate flags'
+    When call SafeDelete "/path/to/delete" --tolerant-missing --tolerant-missing
     The status should eq 2
     The output should include "duplicate"
   End
 
-  It 'returns 2 with duplicate --needs-root flag'
-    When call DisableLaunchDaemon --needs-root --needs-root "com.vendor.app.daemon"
-    The status should eq 2
-    The output should include "duplicate"
-  End
-
-  It 'returns 2 with unknown flag'
-    When call DisableLaunchDaemon --bogus "com.vendor.app.daemon"
-    The status should eq 2
-    The output should include "unknown flag"
-  End
-
-  It 'returns 2 with multiple non-flag arguments'
-    When call DisableLaunchDaemon "com.vendor.app.daemon" "com.vendor.app.other"
-    The status should eq 2
-    The output should include "multiple non-flag"
-  End
-
   # ─────────────────────────═══════════════════════════════════════
-  # Root check (rc 3)
+  # Root gate (rc 3)
   # ─────────────────────────═══════════════════════════════════════
-  # Daemons always require root — no --needs-root flag needed
 
-  It 'returns 3 when not run as root'
+  It 'returns 3 when not root and --needs-root is specified'
     Skip "Requires non-root execution context to test the root guard"
   End
 
   # ─────────────────────────═══════════════════════════════════════
-  # Tolerant missing (rc 0 when absent)
+  # Missing path tests
   # ─────────────────────────═══════════════════════════════════════
 
-  It 'returns 0 when daemon is absent in system domain and --tolerant-missing is set'
-    Skip "Requires root execution context to query launchctl"
+  It 'returns 4 when path does not exist without --tolerant-missing'
+    When call SafeDelete "/nonexistent/path"
+    The status should eq 4
+    The output should include "Absent"
+  End
+
+  It 'returns 0 when path does not exist with --tolerant-missing'
+    When call SafeDelete "/nonexistent/path" --tolerant-missing
+    The status should eq 0
   End
 
   # ─────────────────────────═══════════════════════════════════════
-  # Strict missing (rc 4 when absent)
+  # Symlink deletion tests
   # ─────────────────────────═══════════════════════════════════════
 
-  It 'returns 4 when daemon is not found in system domain without --tolerant-missing'
-    Skip "Requires root execution context to query launchctl"
+  It 'returns 0 when successfully unlinks a symlink'
+    Skip "Requires creating test symlink and mocking UnlinkSymlink"
+  End
+
+  It 'returns 5 when symlink is not a symlink (type check fails)'
+    Skip "Requires creating test file that is not a symlink"
   End
 
   # ─────────────────────────═══════════════════════════════════════
-  # Happy path tests
+  # Directory deletion tests
   # ─────────────────────────═══════════════════════════════════════
 
-  It 'returns 0 when daemon is successfully disabled'
-    Skip "Requires mocking launchctl disable and print-disabled"
+  It 'returns 0 when successfully removes an empty directory'
+    Skip "Requires creating test directory and mocking RemoveDir"
+  End
+
+  It 'returns 5 when directory removal fails'
+    Skip "Requires mocking RemoveDir failure"
   End
 
   # ─────────────────────────═══════════════════════════════════════
-  # Verify-after failure tests (rc 5)
+  # File deletion tests
   # ─────────────────────────═══════════════════════════════════════
 
-  It 'returns 5 when disable succeeds but verify shows still enabled'
-    Skip "Requires mocking launchctl to show enabled after disable"
+  It 'returns 0 when successfully removes a regular file'
+    Skip "Requires creating test file and mocking rm"
   End
 
-  It 'returns 5 when print-disabled has stderr during verification'
-    Skip "Requires mocking launchctl print-disabled to have stderr"
+  It 'returns 5 when file removal fails'
+    Skip "Requires mocking rm failure"
   End
 
   # ─────────────────────────═══════════════════════════════════════
   # Tool presence (rc 1)
   # ─────────────────────────═══════════════════════════════════════
 
-  It 'returns 1 when launchctl is not found'
-    Skip "Requires mocking missing launchctl binary"
+  It 'returns 1 when UnlinkSymlink function is not defined'
+    Skip "Requires mocking missing UnlinkSymlink function"
+  End
+
+  It 'returns 1 when RemoveDir function is not defined'
+    Skip "Requires mocking missing RemoveDir function"
   End
 
   # ─────────────────────────═══════════════════════════════════════
   # Order-agnostic arguments
   # ─────────────────────────═══════════════════════════════════════
 
-  It 'accepts flags before the label'
-    When call DisableLaunchDaemon --tolerant-missing "com.nonexistent.app.daemon"
+  It 'accepts flags before the path'
+    When call SafeDelete --tolerant-missing "/nonexistent/path"
     The status should eq 0
   End
 
-  It 'accepts flags after the label'
-    When call DisableLaunchDaemon "com.nonexistent.app.daemon" --tolerant-missing
+  It 'accepts flags after the path'
+    When call SafeDelete "/nonexistent/path" --tolerant-missing
     The status should eq 0
   End
 
@@ -123,12 +117,12 @@ Describe 'DisableLaunchDaemon'
   # Edge cases
   # ─────────────────────────═══════════════════════════════════════
 
-  It 'handles labels with underscores correctly'
-    Skip "Requires mocking launchctl with underscore label"
+  It 'handles broken symlinks correctly'
+    Skip "Requires creating broken symlink test case"
   End
 
-  It 'handles labels with hyphens correctly'
-    Skip "Requires mocking launchctl with hyphen label"
+  It 'clears immutable flags before deletion when root'
+    Skip "Requires mocking chflags and test file with flags"
   End
 
 End
