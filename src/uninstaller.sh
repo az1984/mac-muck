@@ -89,6 +89,31 @@ LAUNCH_DAEMONS_TO_REMOVE=(
   # "com.microsoft.copilot.daemon"
 )
 
+# Finder Sync Extensions (bundle identifiers) to disable and unregister via pluginkit.
+FINDER_EXTENSIONS_TO_REMOVE=(
+  # "com.microsoft.copilot.finder"
+)
+
+# QuickLook Plugins (paths to .qlgenerator bundles) to remove.
+QUICKLOOK_PLUGINS_TO_REMOVE=(
+  # "/Library/QuickLook/SuspiciousPackage.qlgenerator"
+)
+
+# Privileged Helper Tools (paths to helper binaries) to remove.
+PRIVILEGED_HELPERS_TO_REMOVE=(
+  # "/Library/PrivilegedHelperTools/com.microsoft.copilot.helper"
+)
+
+# Login Items (identifiers) to detect and remove via IdentifyLoginItemType.
+LOGIN_ITEMS_TO_REMOVE=(
+  # "com.microsoft.copilot.loginitem"
+)
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Global flags set by ParseInput (do not edit here — parsed at runtime)
+# ──────────────────────────────────────────────────────────────────────────────
+JAMF_MODE=false
+
 # ──────────────────────────────────────────────────────────────────────────────
 # main (define first)
 #   • Root check lives here
@@ -2734,7 +2759,470 @@ function IdentifyLoginItemType {
 }
 #--------------------------------------------------------------------------------
 
+# @name ParseInput
+# @version 1.0.0
+# @approved true
+# @channels stable,beta
+# @branch core
+# @requires ParseManifestJSON
+#
+# ParseInput — Route input source and populate config arrays.
+#   Priority chain (first source that provides data wins, no merging):
+#     1. --manifest <path> → calls ParseManifestJSON (highest priority)
+#     2. CLI flags (--app-name=, --paths=, --packages=, etc.)
+#     3. Jamf mode ($4 == "jamf=true") → parses $5, $6, $7, etc.
+#     4. Fallback to hardcoded arrays (no modification)
+#
+#   This function is called ONCE, BEFORE main(), at script invocation time.
+#
+# Inputs:
+#   $@  All script arguments (flags and positional params)
+#
+#   CLI flag format:
+#     --app-name="Name"
+#     --paths="/path1|/path2"
+#     --packages="com.pkg1|com.pkg2"
+#     --agents="com.agent1"
+#     --daemons="com.daemon1"
+#     --finder-exts="com.extension1"
+#     --quit="/path/to/app"
+#     --profile-paths="Library/Caches/com.vendor"
+#     --ql-plugins="/Library/QuickLook/plugin.qlgenerator"
+#     --helpers="/Library/PrivilegedHelperTools/helper"
+#     --login-items="com.loginitem1"
+#
+#   Jamf mode ($4 == "jamf=true"):
+#     $1 = mountpoint
+#     $2 = computername
+#     $3 = username
+#     $4 = "jamf=true" (triggers Jamf mode)
+#     $5 = app_name
+#     $6 = paths (pipe-delimited)
+#     $7 = packages (pipe-delimited)
+#
+# Returns:
+#   0 = success (arrays populated from whichever source)
+#   1 = generic failure (manifest parse error, plutil missing)
+#   2 = bad input (--manifest specified but path missing or not a file)
+#
+# Side effects:
+#   Populates global config arrays (APP_NAME, PATHS_TO_REMOVE, PKGS_TO_REMOVE, etc.)
+#   Sets JAMF_MODE=true when Jamf mode is detected
+function ParseInput {
+  set -f
+  local IFS=$' \t\n'
+
+  # --- Check for --manifest mode first (highest priority) ---
+  local manifest_path=""
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      --manifest=*)
+        manifest_path="${arg#--manifest=}"
+        break ;;
+    esac
+  done
+
+  if [[ -n "$manifest_path" ]]; then
+    # Manifest specified — validate path exists
+    if [[ ! -f "$manifest_path" ]]; then
+      echo "ERROR: ParseInput --manifest path does not exist: $manifest_path" >&2
+      return 2
+    fi
+    # Call ParseManifestJSON to populate arrays
+    ParseManifestJSON "$manifest_path"
+    return $?
+  fi
+
+  # --- Check for CLI flag mode (any --flag= present) ---
+  local has_cli_flag=false
+  for arg in "$@"; do
+    if [[ "$arg" == --* ]]; then
+      has_cli_flag=true
+      break
+    fi
+  done
+
+  if $has_cli_flag; then
+    # CLI flag mode — parse all flags
+    local app_name="" paths_str="" packages_str="" agents_str="" daemons_str=""
+    local finder_exts_str="" quit_str="" profile_paths_str="" ql_plugins_str=""
+    local helpers_str="" login_items_str=""
+
+    for arg in "$@"; do
+      case "$arg" in
+        --app-name=*)
+          app_name="${arg#--app-name=}" ;;
+        --paths=*)
+          paths_str="${arg#--paths=}" ;;
+        --packages=*)
+          packages_str="${arg#--packages=}" ;;
+        --agents=*)
+          agents_str="${arg#--agents=}" ;;
+        --daemons=*)
+          daemons_str="${arg#--daemons=}" ;;
+        --finder-exts=*)
+          finder_exts_str="${arg#--finder-exts=}" ;;
+        --quit=*)
+          quit_str="${arg#--quit=}" ;;
+        --profile-paths=*)
+          profile_paths_str="${arg#--profile-paths=}" ;;
+        --ql-plugins=*)
+          ql_plugins_str="${arg#--ql-plugins=}" ;;
+        --helpers=*)
+          helpers_str="${arg#--helpers=}" ;;
+        --login-items=*)
+          login_items_str="${arg#--login-items=}" ;;
+      esac
+    done
+
+    # Populate arrays from CLI flags (only if non-empty)
+    if [[ -n "$app_name" ]]; then
+      APP_NAME="$app_name"
+    fi
+    if [[ -n "$paths_str" ]]; then
+      IFS='|' read -ra PATHS_TO_REMOVE <<< "$paths_str"
+    fi
+    if [[ -n "$packages_str" ]]; then
+      IFS='|' read -ra PKGS_TO_REMOVE <<< "$packages_str"
+    fi
+    if [[ -n "$agents_str" ]]; then
+      IFS='|' read -ra LAUNCH_AGENTS_TO_REMOVE <<< "$agents_str"
+    fi
+    if [[ -n "$daemons_str" ]]; then
+      IFS='|' read -ra LAUNCH_DAEMONS_TO_REMOVE <<< "$daemons_str"
+    fi
+    if [[ -n "$finder_exts_str" ]]; then
+      IFS='|' read -ra FINDER_EXTENSIONS_TO_REMOVE <<< "$finder_exts_str"
+    fi
+    if [[ -n "$quit_str" ]]; then
+      IFS='|' read -ra APPS_TO_QUIT <<< "$quit_str"
+    fi
+    if [[ -n "$profile_paths_str" ]]; then
+      IFS='|' read -ra PROFILE_REL_PATHS_TO_REMOVE <<< "$profile_paths_str"
+    fi
+    if [[ -n "$ql_plugins_str" ]]; then
+      IFS='|' read -ra QUICKLOOK_PLUGINS_TO_REMOVE <<< "$ql_plugins_str"
+    fi
+    if [[ -n "$helpers_str" ]]; then
+      IFS='|' read -ra PRIVILEGED_HELPERS_TO_REMOVE <<< "$helpers_str"
+    fi
+    if [[ -n "$login_items_str" ]]; then
+      IFS='|' read -ra LOGIN_ITEMS_TO_REMOVE <<< "$login_items_str"
+    fi
+
+    # Update ECHO_PREFIX if APP_NAME changed
+    ECHO_PREFIX="${ECHO_PREFIX:-${APP_NAME} Uninstaller.sh - }"
+
+    return 0
+  fi
+
+  # --- Check for Jamf mode ($4 == "jamf=true") ---
+  if [[ "${4:-}" == "jamf=true" ]]; then
+    JAMF_MODE=true
+
+    # $5 = app_name, $6 = paths, $7 = packages
+    local jamf_app_name="${5:-}"
+    local jamf_paths="${6:-}"
+    local jamf_packages="${7:-}"
+
+    if [[ -n "$jamf_app_name" ]]; then
+      APP_NAME="$jamf_app_name"
+    fi
+    if [[ -n "$jamf_paths" ]]; then
+      IFS='|' read -ra PATHS_TO_REMOVE <<< "$jamf_paths"
+    fi
+    if [[ -n "$jamf_packages" ]]; then
+      IFS='|' read -ra PKGS_TO_REMOVE <<< "$jamf_packages"
+    fi
+
+    # Update ECHO_PREFIX if APP_NAME changed
+    ECHO_PREFIX="${ECHO_PREFIX:-${APP_NAME} Uninstaller.sh - }"
+
+    [[ ${DEBUG:-false} == true ]] && echo "DEBUG: ParseInput — Jamf mode detected, APP_NAME=$APP_NAME"
+    return 0
+  fi
+
+  # --- Fallback: no input source matched, keep hardcoded arrays ---
+  [[ ${DEBUG:-false} == true ]] && echo "DEBUG: ParseInput — fallback to hardcoded arrays"
+  return 0
+}
+#--------------------------------------------------------------------------------
+
+# @name ParseManifestJSON
+# @version 1.0.0
+# @approved true
+# @channels stable,beta
+# @branch core
+# @requires /usr/bin/plutil
+#
+# ParseManifestJSON — Parse a JSON manifest file using plutil (no Python/jq).
+#   Reads a JSON file and populates config arrays from its contents.
+#
+# JSON schema:
+# {
+#   "app_name": "Vendor App",
+#   "apps_to_quit": ["/Applications/Vendor.app"],
+#   "paths": ["/Applications/Vendor.app"],
+#   "profile_rel_paths": ["Library/Caches/com.vendor"],
+#   "packages": ["com.vendor.app"],
+#   "launch_agents": ["com.vendor.app.agent"],
+#   "launch_daemons": ["com.vendor.app.daemon"],
+#   "finder_extensions": ["com.vendor.app.FinderSync"],
+#   "quicklook_plugins": ["/Library/QuickLook/Vendor.qlgenerator"],
+#   "privileged_helpers": ["/Library/PrivilegedHelperTools/com.vendor.helper"],
+#   "login_items": ["com.vendor.loginitem"]
+# }
+#
+# Inputs:
+#   $1  path to JSON manifest file (REQUIRED)
+#
+# Returns:
+#   0 = success (arrays populated)
+#   1 = generic failure (plutil missing, parse error, file not readable)
+#   2 = bad input (missing path, path not a file)
+#
+# Safety notes:
+#   - Uses /usr/bin/plutil -convert json to parse JSON without Python/jq
+#   - Arrays are completely replaced (not merged with existing values)
+function ParseManifestJSON {
+  set -f
+  local IFS=$' \t\n'
+
+  local fnw="${LOG_FN_WIDTH:-24}" lvw="${LOG_LVL_WIDTH:-10}"
+  local my_echo_prefix="${ECHO_PREFIX:-}$(printf "%-*s" "$fnw" "ParseManifestJSON - ")"
+  local my_vrb_prefix="$(printf "%-*s" "$lvw" "INFO:")"
+  local my_err_prefix="$(printf "%-*s" "$lvw" "ERROR:")"
+  local my_dbg_prefix="$(printf "%-*s" "$lvw" "DEBUG:")"
+
+  # --- Validate input ---
+  if [[ $# -ne 1 ]]; then
+    echo "${my_echo_prefix}${my_err_prefix}Bad input: expected exactly 1 argument (manifest path). Got $# args."
+    return 2
+  fi
+
+  local manifest_path="$1"
+
+  if [[ ! -f "$manifest_path" ]]; then
+    echo "${my_echo_prefix}${my_err_prefix}Manifest file not found: $manifest_path"
+    return 2
+  fi
+
+  # --- Tool presence ---
+  local PLUTIL_BIN="/usr/bin/plutil"
+  if [[ ! -x "$PLUTIL_BIN" ]]; then
+    echo "${my_echo_prefix}${my_err_prefix}Missing required tool: $PLUTIL_BIN"
+    return 1
+  fi
+
+  # --- Convert JSON to XML for plutil parsing ---
+  local tmp_xml
+  tmp_xml=$(mktemp /tmp/manifest_xml.XXXXXX) || {
+    echo "${my_echo_prefix}${my_err_prefix}Failed to create temp file."
+    return 1
+  }
+
+  # Convert JSON to XML format that plutil can read
+  "$PLUTIL_BIN" -convert xml1 -o "$tmp_xml" "$manifest_path" 2>/dev/null
+  local convert_rc=$?
+
+  if [[ $convert_rc -ne 0 ]]; then
+    echo "${my_echo_prefix}${my_err_prefix}Failed to parse manifest JSON: $manifest_path"
+    rm -f "$tmp_xml"
+    return 1
+  fi
+
+  # --- Extract values using plutil ---
+  local extract_value
+  extract_value() {
+    local key="$1"
+    "$PLUTIL_BIN" -extract "$key" xml1 -o - "$tmp_xml" 2>/dev/null || echo ""
+  }
+
+  # Extract simple string values
+  local json_app_name
+  json_app_name=$(extract_value "app_name")
+  if [[ -n "$json_app_name" ]]; then
+    APP_NAME="$json_app_name"
+  fi
+
+  # --- Extract arrays ---
+  # For arrays, we need to iterate through indices
+  local -a tmp_array
+
+  # apps_to_quit
+  tmp_array=()
+  local i=0
+  while true; do
+    local val
+    val=$(extract_value "apps_to_quit.$i")
+    if [[ -z "$val" ]]; then
+      break
+    fi
+    tmp_array+=("$val")
+    ((i++))
+  done
+  if (( ${#tmp_array[@]} > 0 )); then
+    APPS_TO_QUIT=("${tmp_array[@]}")
+  fi
+
+  # paths
+  tmp_array=()
+  i=0
+  while true; do
+    local val
+    val=$(extract_value "paths.$i")
+    if [[ -z "$val" ]]; then
+      break
+    fi
+    tmp_array+=("$val")
+    ((i++))
+  done
+  if (( ${#tmp_array[@]} > 0 )); then
+    PATHS_TO_REMOVE=("${tmp_array[@]}")
+  fi
+
+  # profile_rel_paths
+  tmp_array=()
+  i=0
+  while true; do
+    local val
+    val=$(extract_value "profile_rel_paths.$i")
+    if [[ -z "$val" ]]; then
+      break
+    fi
+    tmp_array+=("$val")
+    ((i++))
+  done
+  if (( ${#tmp_array[@]} > 0 )); then
+    PROFILE_REL_PATHS_TO_REMOVE=("${tmp_array[@]}")
+  fi
+
+  # packages
+  tmp_array=()
+  i=0
+  while true; do
+    local val
+    val=$(extract_value "packages.$i")
+    if [[ -z "$val" ]]; then
+      break
+    fi
+    tmp_array+=("$val")
+    ((i++))
+  done
+  if (( ${#tmp_array[@]} > 0 )); then
+    PKGS_TO_REMOVE=("${tmp_array[@]}")
+  fi
+
+  # launch_agents
+  tmp_array=()
+  i=0
+  while true; do
+    local val
+    val=$(extract_value "launch_agents.$i")
+    if [[ -z "$val" ]]; then
+      break
+    fi
+    tmp_array+=("$val")
+    ((i++))
+  done
+  if (( ${#tmp_array[@]} > 0 )); then
+    LAUNCH_AGENTS_TO_REMOVE=("${tmp_array[@]}")
+  fi
+
+  # launch_daemons
+  tmp_array=()
+  i=0
+  while true; do
+    local val
+    val=$(extract_value "launch_daemons.$i")
+    if [[ -z "$val" ]]; then
+      break
+    fi
+    tmp_array+=("$val")
+    ((i++))
+  done
+  if (( ${#tmp_array[@]} > 0 )); then
+    LAUNCH_DAEMONS_TO_REMOVE=("${tmp_array[@]}")
+  fi
+
+  # finder_extensions
+  tmp_array=()
+  i=0
+  while true; do
+    local val
+    val=$(extract_value "finder_extensions.$i")
+    if [[ -z "$val" ]]; then
+      break
+    fi
+    tmp_array+=("$val")
+    ((i++))
+  done
+  if (( ${#tmp_array[@]} > 0 )); then
+    FINDER_EXTENSIONS_TO_REMOVE=("${tmp_array[@]}")
+  fi
+
+  # quicklook_plugins
+  tmp_array=()
+  i=0
+  while true; do
+    local val
+    val=$(extract_value "quicklook_plugins.$i")
+    if [[ -z "$val" ]]; then
+      break
+    fi
+    tmp_array+=("$val")
+    ((i++))
+  done
+  if (( ${#tmp_array[@]} > 0 )); then
+    QUICKLOOK_PLUGINS_TO_REMOVE=("${tmp_array[@]}")
+  fi
+
+  # privileged_helpers
+  tmp_array=()
+  i=0
+  while true; do
+    local val
+    val=$(extract_value "privileged_helpers.$i")
+    if [[ -z "$val" ]]; then
+      break
+    fi
+    tmp_array+=("$val")
+    ((i++))
+  done
+  if (( ${#tmp_array[@]} > 0 )); then
+    PRIVILEGED_HELPERS_TO_REMOVE=("${tmp_array[@]}")
+  fi
+
+  # login_items
+  tmp_array=()
+  i=0
+  while true; do
+    local val
+    val=$(extract_value "login_items.$i")
+    if [[ -z "$val" ]]; then
+      break
+    fi
+    tmp_array+=("$val")
+    ((i++))
+  done
+  if (( ${#tmp_array[@]} > 0 )); then
+    LOGIN_ITEMS_TO_REMOVE=("${tmp_array[@]}")
+  fi
+
+  # Clean up
+  rm -f "$tmp_xml"
+
+  # Update ECHO_PREFIX if APP_NAME changed
+  ECHO_PREFIX="${ECHO_PREFIX:-${APP_NAME} Uninstaller.sh - }"
+
+  [[ ${DEBUG:-false} == true ]] && echo "${my_echo_prefix}${my_dbg_prefix}Manifest parsed successfully: $manifest_path"
+  return 0
+}
+#--------------------------------------------------------------------------------
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Run
 # ──────────────────────────────────────────────────────────────────────────────
+ParseInput "$@"
 main "$@"
