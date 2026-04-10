@@ -2484,6 +2484,256 @@ function RemovePrivilegedHelper {
 }
 #--------------------------------------------------------------------------------
 
+# @name IdentifyLoginItemType
+# @version 1.0.0
+# @approved true
+# @channels stable,beta
+# @branch core
+# @requires /usr/bin/sfltool
+#
+# IdentifyLoginItemType — Detect the persistence mechanism underlying a login/background item.
+#   This is a DETECTOR, not a remover. It queries sfltool dumpbtm to identify what type
+#   of artifact (LaunchDaemon, LaunchAgent, PrivilegedHelperTool, or App) is registered
+#   in the macOS Background Task Management database.
+#
+#   The caller uses this to route to the correct removal function based on TYPE.
+#
+# Inputs (order-agnostic):
+#   $*  <identifier> [--tolerant-missing]
+#
+#   Where <identifier> is a reverse-DNS label (e.g., "corp.sap.privileges.helper").
+#
+# Returns:
+#   0 = found in BTM database (outputs: TYPE=<type> PATH=<path> DISPOSITION=<flags>)
+#   1 = generic failure (sfltool missing, parse error, unexpected output format)
+#   2 = bad input (missing identifier, invalid format, unknown flag, duplicate flag)
+#   3 = needs root (sfltool dumpbtm requires root)
+#   4 = identifier not found in BTM database and NOT tolerant
+#
+# Output (stdout on rc 0):
+#   TYPE=<daemon|agent|helper|app|login_item|unknown> PATH=<filesystem_path> DISPOSITION=<disposition_flags>
+#
+#   Examples:
+#     TYPE=daemon PATH=/Library/LaunchDaemons/corp.sap.privileges.helper.plist DISPOSITION=enabled,allowed,visible,notified
+#     TYPE=agent PATH=/Library/LaunchAgents/com.vendor.agent.plist DISPOSITION=enabled,allowed,visible
+#     TYPE=unknown PATH= DISPOSITION=enabled,allowed
+#
+# Safety notes:
+#   - Read-only query function — does NOT modify the BTM database.
+#   - sfltool dumpbtm requires root. The function enforces EUID == 0.
+#   - Output format of sfltool dumpbtm is undocumented and may change. Parser is defensive.
+#   - URL field may be empty for orphaned entries. PATH= will be empty in that case.
+#   - This function does NOT perform any removal. The caller routes based on TYPE.
+function IdentifyLoginItemType {
+  set -f
+  local IFS=$' \t\n'
+
+  # Aligned logging prefixes
+  local fnw="${LOG_FN_WIDTH:-24}" lvw="${LOG_LVL_WIDTH:-10}"
+  local my_echo_prefix="${ECHO_PREFIX:-}$(printf "%-*s" "$fnw" "IdentifyLoginItemType - ")"
+  local my_vrb_prefix="$(printf "%-*s" "$lvw" "INFO:")"
+  local my_err_prefix="$(printf "%-*s" "$lvw" "ERROR:")"
+  local my_dbg_prefix="$(printf "%-*s" "$lvw" "DEBUG:")"
+
+  # Order-agnostic argument parsing with duplicate detection
+  local tolerant=false identifier=""
+  if (( $# == 0 || $# > 2 )); then
+    echo "${my_echo_prefix}${my_err_prefix}Bad input: expected <identifier> [--tolerant-missing]. Got $# args."
+    return 2
+  fi
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      --tolerant-missing)
+        if [[ $tolerant == true ]]; then
+          echo "${my_echo_prefix}${my_err_prefix}Bad input: duplicate --tolerant-missing flag."
+          return 2
+        fi
+        tolerant=true ;;
+      -*)
+        echo "${my_echo_prefix}${my_err_prefix}Bad input: unknown flag '$arg'."
+        return 2 ;;
+      *)
+        if [[ -n "$identifier" ]]; then
+          echo "${my_echo_prefix}${my_err_prefix}Bad input: multiple non-flag arguments."
+          return 2
+        fi
+        identifier="$arg" ;;
+    esac
+  done
+
+  # Validate identifier is present
+  if [[ -z "$identifier" ]]; then
+    echo "${my_echo_prefix}${my_err_prefix}Bad input: missing identifier argument."
+    return 2
+  fi
+
+  # Root gate (mandatory - sfltool dumpbtm requires root)
+  if [[ $EUID -ne 0 ]]; then
+    echo "${my_echo_prefix}${my_err_prefix}Needs root: sfltool dumpbtm requires root."
+    return 3
+  fi
+
+  # Tool presence check
+  local SFLTOOL_BIN="/usr/bin/sfltool"
+  if [[ ! -x "$SFLTOOL_BIN" ]]; then
+    echo "${my_echo_prefix}${my_err_prefix}Missing required tool: $SFLTOOL_BIN"
+    return 1
+  fi
+
+  # Validate identifier format (reverse-DNS with ≥2 labels for flexibility)
+  local id_re='^[A-Za-z][A-Za-z0-9]*(\.[A-Za-z][A-Za-z0-9_-]*)+$'
+  if [[ ! "$identifier" =~ $id_re ]]; then
+    echo "${my_echo_prefix}${my_err_prefix}Invalid identifier format: $identifier"
+    return 2
+  fi
+
+  # Dump BTM database and capture output to temp file
+  local btm_dump
+  btm_dump=$(mktemp /tmp/btm_dump.XXXXXX) || {
+    echo "${my_echo_prefix}${my_err_prefix}Failed to create temp file for BTM dump."
+    return 1
+  }
+
+  "$SFLTOOL_BIN" dumpbtm > "$btm_dump" 2>&1 || true
+
+  # Parse the dump to find the matching identifier
+  local found=0
+  local current_type=""
+  local current_disposition=""
+  local current_url=""
+  local in_entry=0
+  local entry_identifier=""
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    # Detect start of a new entry (#N: pattern)
+    if [[ "$line" =~ ^#[0-9]+: ]]; then
+      # If we were processing an entry and haven't matched, reset for new entry
+      if [[ $in_entry -eq 1 && -n "$entry_identifier" ]]; then
+        # Check if previous entry matched
+        if [[ "$entry_identifier" == "$identifier" ]]; then
+          found=1
+          break
+        fi
+      fi
+      # Start new entry
+      in_entry=1
+      current_type=""
+      current_disposition=""
+      current_url=""
+      entry_identifier=""
+      continue
+    fi
+
+    # Parse fields within an entry
+    if [[ $in_entry -eq 1 ]]; then
+      # Type field: "  Type:            <type string> (<hex code>)"
+      if [[ "$line" =~ ^[[:space:]]*Type:[[:space:]]*([^[:space:]]+)[[:space:]]*\( ]]; then
+        current_type="${BASH_REMATCH[1]}"
+      fi
+
+      # Disposition field: "  Disposition:     <comma-separated flags>"
+      if [[ "$line" =~ ^[[:space:]]*Disposition:[[:space:]]*(.+)$ ]]; then
+        current_disposition="${BASH_REMATCH[1]}"
+        # Trim trailing whitespace
+        current_disposition="${current_disposition%"${current_disposition##*[![:space:]]}"}"
+      fi
+
+      # URL field: "  URL:             <file:///path/to/artifact>"
+      if [[ "$line" =~ ^[[:space:]]*URL:[[:space:]]*file://(.+)$ ]]; then
+        current_url="${BASH_REMATCH[1]}"
+      fi
+
+      # Identifier field: "  Identifier:      <reverse-dns identifier>"
+      if [[ "$line" =~ ^[[:space:]]*Identifier:[[:space:]]*(.+)$ ]]; then
+        entry_identifier="${BASH_REMATCH[1]}"
+        # Trim trailing whitespace
+        entry_identifier="${entry_identifier%"${entry_identifier##*[![:space:]]}"}"
+      fi
+    fi
+  done < "$btm_dump"
+
+  # Check the last entry if we haven't found yet
+  if [[ $found -eq 0 && $in_entry -eq 1 && -n "$entry_identifier" ]]; then
+    if [[ "$entry_identifier" == "$identifier" ]]; then
+      found=1
+    fi
+  fi
+
+  # Clean up temp file
+  rm -f "$btm_dump"
+
+  # Handle not found
+  if [[ $found -eq 0 ]]; then
+    if $tolerant; then
+      [[ ${VERBOSE:-false} == true || ${DEBUG:-false} == true ]] && \
+        echo "${my_echo_prefix}${my_vrb_prefix}Identifier not found in BTM database (tolerant-missing): $identifier"
+      return 0
+    else
+      echo "${my_echo_prefix}${my_err_prefix}Identifier not found in BTM database: $identifier"
+      return 4
+    fi
+  fi
+
+  [[ ${DEBUG:-false} == true ]] && echo "${my_echo_prefix}${my_dbg_prefix}Found BTM entry for: $identifier"
+
+  # Classify type based on Type field and hex code
+  local type_output="unknown"
+  local path_output=""
+
+  case "$current_type" in
+    "legacy daemon")
+      type_output="daemon"
+      # Construct LaunchDaemon plist path
+      path_output="/Library/LaunchDaemons/${identifier}.plist"
+      ;;
+    "legacy agent")
+      type_output="agent"
+      # Could be in /Library/LaunchAgents or ~/Library/LaunchAgents
+      # Default to system location; caller can probe both
+      path_output="/Library/LaunchAgents/${identifier}.plist"
+      ;;
+    "login item")
+      type_output="login_item"
+      # URL should contain the app path
+      if [[ -n "$current_url" ]]; then
+        path_output="$current_url"
+      fi
+      ;;
+    "developer")
+      type_output="helper"
+      # SMAppService daemon/agent - URL may point to helper or plist
+      if [[ -n "$current_url" ]]; then
+        path_output="$current_url"
+      fi
+      ;;
+    "app")
+      type_output="app"
+      # URL should contain the app bundle path
+      if [[ -n "$current_url" ]]; then
+        path_output="$current_url"
+      fi
+      ;;
+    *)
+      # Unrecognized type - output unknown
+      type_output="unknown"
+      # Try to extract path from URL if available
+      if [[ -n "$current_url" ]]; then
+        path_output="$current_url"
+      fi
+      ;;
+  esac
+
+  # Output the machine-parseable result
+  echo "TYPE=${type_output} PATH=${path_output} DISPOSITION=${current_disposition}"
+
+  [[ ${VERBOSE:-false} == true || ${DEBUG:-false} == true ]] && \
+    echo "${my_echo_prefix}${my_vrb_prefix}Identified login item: TYPE=${type_output} PATH=${path_output}"
+
+  return 0
+}
+#--------------------------------------------------------------------------------
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Run
 # ──────────────────────────────────────────────────────────────────────────────
