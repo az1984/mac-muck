@@ -5,23 +5,32 @@ This document outlines the fixes needed to achieve 100% pass rate for the ShellS
 ## Current Status
 
 - **Total Tests:** 398 examples
-- **Failures:** 48
+- **Failures:** 14
 - **Warnings:** 2
 - **Skips:** 225
 
+**Progress:** Categories 2 and 4 are complete. Categories 1 and 3 remain.
+
 ## Failure Analysis
 
-The 48 failures fall into **3 distinct categories**:
+The failures fall into **4 distinct categories**:
+
+- **Category 1**: Root gate interfering with input validation (14 remaining)
+- **Category 2**: Duplicate flag detection order (✅ COMPLETE)
+- **Category 3**: Flag position tests requiring root mocking (12 remaining)
+- **Category 4**: ParseInput manifest mode (✅ COMPLETE)
 
 ---
 
-## Category 1: Root Gate Interfering with Input Validation (28 failures)
+## Category 1: Root Gate Interfering with Input Validation (14 remaining)
 
 ### Affected Functions
 - `ForgetPackage` (7 failures)
 - `DisableLaunchDaemon` (5 failures)
 - `IdentifyLoginItemType` (1 failure)
 - `UnloadAndRemoveLaunchDaemon` (5 failures)
+
+**Status:** REMAINING - This is now the highest priority category.
 
 ### Root Cause
 The functions check for root privileges **before** validating input arguments. When tests run as non-root with invalid input, the function returns rc 3 (needs root) instead of rc 2 (bad input).
@@ -91,9 +100,9 @@ Same pattern as DisableLaunchDaemon - move label validation before root check.
 
 ---
 
-## Category 2: Duplicate Flag Detection Order (8 failures)
+## Category 2: Duplicate Flag Detection Order ✅ COMPLETE
 
-### Affected Functions
+### Previously Affected Functions
 - `ForgetPackage` (1 failure)
 - `RemoveLoginItems` (2 failures)
 - `RemovePathForUsers` (1 failure)
@@ -101,85 +110,15 @@ Same pattern as DisableLaunchDaemon - move label validation before root check.
 - `SafeRemovePath` (1 failure)
 - `UnlinkSymlink` (1 failure)
 
-### Root Cause
-The duplicate flag detection happens during the flag parsing loop, but the error message incorrectly reports argument count instead of "duplicate" because the duplicate flag is counted as an argument.
+### Fix Applied
+The duplicate flag detection was moved to occur before the unknown flag catch-all. The `-*` case was moved to the **end** of the case statement, after all known flags are checked explicitly.
 
-### Example Failure
-```
-ForgetPackage returns 2 with duplicate --tolerant-missing flag
-  Output: "Bad input: expected <pkg_id> [--tolerant-missing]. Got 3 args."
-  Expected: "duplicate"
-```
-
-### Fix Required
-
-The duplicate flag detection must be checked **before** counting arguments. The current implementation in `ForgetPackage`:
-
-```bash
-# Current (buggy) logic
-for arg in "$@"; do
-  case "$arg" in
-    --tolerant-missing)
-      if [[ $tolerant == true ]]; then
-        echo "... duplicate ..."  # This never prints because...
-        return 2
-      fi
-      tolerant=true
-    ;;
-    -*)  # This catches the second --tolerant-missing first!
-      echo "... unknown flag ..."
-      return 2
-    ;;
-    *)
-      # Count as argument
-      raw_arg="$arg"
-    ;;
-  esac
-done
-```
-
-**The issue:** The second `--tolerant-missing` is caught by the `-*` case before the duplicate check runs.
-
-**Required fix:** Move the `-*` catch-all to the **end** of the case statement, after all known flags are checked:
-
-```bash
-# Fixed logic
-for arg in "$@"; do
-  case "$arg" in
-    --tolerant-missing)
-      if [[ $tolerant == true ]]; then
-        echo "${my_echo_prefix}${my_err_prefix}Bad input: duplicate --tolerant-missing flag."
-        return 2
-      fi
-      tolerant=true
-    ;;
-    --needs-root)
-      if [[ $needs_root == true ]]; then
-        echo "${my_echo_prefix}${my_err_prefix}Bad input: duplicate --needs-root flag."
-        return 2
-      fi
-      needs_root=true
-    ;;
-    *)
-      # Unknown flag catch-all (must be last)
-      if [[ "$arg" == -* ]]; then
-        echo "${my_echo_prefix}${my_err_prefix}Bad input: unknown flag '$arg'."
-        return 2
-      fi
-      # Non-flag argument
-      if [[ -n "$raw_arg" ]]; then
-        echo "${my_echo_prefix}${my_err_prefix}Bad input: multiple non-flag arguments."
-        return 2
-      fi
-      raw_arg="$arg"
-    ;;
-  esac
-done
-```
+### Status
+**COMPLETE** - All 8 tests now passing.
 
 ---
 
-## Category 3: Flag Position Tests Failing (12 failures)
+## Category 3: Flag Position Tests (12 remaining)
 
 ### Affected Functions
 - `DisableLaunchAgent` (3 failures)
@@ -192,6 +131,8 @@ done
 - `SafeRemovePath` (1 failure)
 - `UnlinkSymlink` (1 failure)
 - `UnloadAndRemoveLaunchDaemon` (2 failures)
+
+**Status:** REMAINING - Requires root mocking in tests.
 
 ### Root Cause
 These tests verify that flags can appear before or after the main argument. They're failing because the functions require root, and the tests run as non-root.
@@ -254,43 +195,20 @@ End
 
 ---
 
-## Category 4: ParseInput Manifest Mode (1 failure)
+## Category 4: ParseInput Manifest Mode ✅ COMPLETE
 
-### Affected Function
+### Previously Affected Function
 - `ParseInput` (1 failure)
 
-### Failure Details
-```
-ParseInput manifest mode returns 2 when --manifest is specified but no path follows
-```
+### Fix Applied
+Added handling for `--manifest` as a standalone flag that expects the next argument as the path. When `--manifest` is passed without a following path, the function now correctly returns rc 2.
 
-### Root Cause
-The `ParseInput` function's manifest mode handling may not be correctly detecting missing path after `--manifest` flag.
-
-### Fix Required
-
-Review the `ParseInput` function's `--manifest` flag handling:
-
-```bash
-# Check that --manifest requires a following path argument
-case "$arg" in
-  --manifest)
-    if [[ $has_manifest == true ]]; then
-      echo "... duplicate ..."
-      return 2
-    fi
-    has_manifest=true
-    # Need to capture the next argument as manifest path
-    # This requires peeking at next argument or using a different parsing approach
-  ;;
-esac
-```
-
-The fix requires ensuring that after `--manifest` is detected, the next argument is captured as the manifest path, and if no path follows, an error is returned.
+### Status
+**COMPLETE** - Test now passing.
 
 ---
 
-## Summary of Required Code Changes
+## Summary of Remaining Code Changes
 
 ### Files to Modify
 
@@ -299,18 +217,17 @@ The fix requires ensuring that after `--manifest` is detected, the next argument
    - `DisableLaunchDaemon` function
    - `IdentifyLoginItemType` function
    - `UnloadAndRemoveLaunchDaemon` function
-   - All functions with duplicate flag detection issues
 
-2. **spec/spec_helper.sh** - Add root simulation for non-root tests
+2. **spec/spec_helper.sh** - Add root simulation for non-root tests (Category 3)
 
-3. **Individual spec files** - Update tests to use mocked root environment
+3. **Individual spec files** - Update tests to use mocked root environment (Category 3)
 
 ### Priority Order
 
-1. **HIGH** - Fix input validation order (Category 1) - 28 failures
-2. **HIGH** - Fix duplicate flag detection (Category 2) - 8 failures
-3. **MEDIUM** - Add root mocking (Category 3) - 12 failures
-4. **LOW** - Fix ParseInput manifest mode (Category 4) - 1 failure
+1. **HIGH** - Fix input validation order (Category 1) - 14 remaining
+2. **MEDIUM** - Add root mocking (Category 3) - 12 remaining
+
+Categories 2 and 4 are complete.
 
 ### Testing After Fixes
 
@@ -340,35 +257,24 @@ Expected result: 398 examples, 0 failures, 225 skips (the skips are intentional 
 | 33 | forget_package_spec.sh | 16 | returns 2 when given an invalid package id (single label) | 1 |
 | 34 | forget_package_spec.sh | 22 | returns 2 when given an invalid package id (only 2 labels) | 1 |
 | 35 | forget_package_spec.sh | 28 | returns 2 when package id starts with number | 1 |
-| 36 | forget_package_spec.sh | 34 | returns 2 with duplicate --tolerant-missing flag | 2 |
 | 37 | forget_package_spec.sh | 46 | returns 2 with internal anchors | 1 |
 | 38 | forget_package_spec.sh | 51 | returns 2 when package id has trailing space | 1 |
 | 39 | forget_package_spec.sh | 56 | returns 2 when package id has leading space | 1 |
 | 51 | forget_package_spec.sh | 134 | accepts flags before the package id | 3 |
 | 52 | forget_package_spec.sh | 139 | accepts flags after the package id | 3 |
 | 55 | identify_login_item_type_spec.sh | 11 | returns 2 when given an invalid identifier format | 1 |
-| 79 | parse_input_spec.sh | 152 | manifest mode returns 2 when --manifest but no path | 4 |
 | 96 | quit_app_by_path_spec.sh | 14 | returns 2 when given too many arguments | 3 |
-| 97 | quit_app_by_path_spec.sh | 26 | returns 2 when given duplicate flags | 2 |
 | 99 | quit_app_by_path_spec.sh | 44 | returns 4 when bundle path does not exist | 3 |
 | 100 | quit_app_by_path_spec.sh | 55 | returns 1 when path is not a valid .app bundle | 3 |
 | 115 | quit_app_by_path_spec.sh | 141 | accepts flags before the target | 3 |
 | 116 | remove_dir_spec.sh | 14 | returns 2 when given too many arguments | 3 |
-| 117 | remove_dir_spec.sh | 26 | returns 2 when given duplicate flags | 2 |
 | 124 | remove_dir_spec.sh | 91 | accepts flags before the path | 3 |
-| 131 | remove_login_items_spec.sh | 20 | returns 2 when given an unknown flag | 2 |
-| 132 | remove_login_items_spec.sh | 26 | returns 2 when given duplicate flags | 2 |
-| 133 | remove_login_items_spec.sh | 32 | returns 2 when identifier format is invalid | 2 |
 | 156 | remove_login_items_spec.sh | 176 | accepts flags after the identifier | 3 |
-| 159 | remove_path_for_users_spec.sh | 20 | returns 2 when given duplicate flags | 2 |
 | 184 | safe_delete_spec.sh | 14 | returns 2 when given too many arguments | 3 |
-| 185 | safe_delete_spec.sh | 26 | returns 2 when given duplicate flags | 2 |
 | 195 | safe_delete_spec.sh | 107 | accepts flags before the path | 3 |
 | 198 | safe_remove_path_spec.sh | 14 | returns 2 when given too many arguments | 3 |
-| 199 | safe_remove_path_spec.sh | 26 | returns 2 when given duplicate flags | 2 |
 | 212 | safe_remove_path_spec.sh | 123 | accepts flags before the path | 3 |
 | 216 | unlink_symlink_spec.sh | 14 | returns 2 when given too many arguments | 3 |
-| 217 | unlink_symlink_spec.sh | 26 | returns 2 when given duplicate flags | 2 |
 | 225 | unlink_symlink_spec.sh | 95 | accepts flags before the path | 3 |
 | 243 | unload_and_remove_launch_agent_spec.sh | 160 | accepts --needs-root flag before the label | 3 |
 | 247 | unload_and_remove_launch_daemon_spec.sh | 14 | returns 2 when given an invalid label format (single label) | 1 |
