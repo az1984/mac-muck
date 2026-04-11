@@ -611,21 +611,45 @@ QuitAppByPath() {
   local PLISTB="/usr/libexec/PlistBuddy"
   local KILL="/bin/kill"
 
-  # -------- args / flags --------
-  if (( $# < 1 || $# > 3 )); then
-    echo "${my_echo_prefix}${my_err_prefix} Bad input: expected 1..3 args"
-    return 2
-  fi
-  local target="$1"; shift
+  # -------- args / flags (parse first to catch duplicates before count validation) --------
+  local target=""
   local tolerant=false needs_root=false
+  local arg_count=0
   while (( $# )); do
     case "$1" in
-      --tolerant-missing) tolerant=true ;;
-      --needs-root)       needs_root=true ;;
-      *) echo "${my_echo_prefix}${my_err_prefix} Unknown flag: $1"; return 2 ;;
+      --tolerant-missing)
+        if [[ $tolerant == true ]]; then
+          echo "${my_echo_prefix}${my_err_prefix} Bad input: duplicate --tolerant-missing flag."
+          return 2
+        fi
+        tolerant=true ;;
+      --needs-root)
+        if [[ $needs_root == true ]]; then
+          echo "${my_echo_prefix}${my_err_prefix} Bad input: duplicate --needs-root flag."
+          return 2
+        fi
+        needs_root=true ;;
+      -*) echo "${my_echo_prefix}${my_err_prefix} Unknown flag: $1"; return 2 ;;
+      *)
+        # Count non-flag arguments
+        ((arg_count++))
+        if [[ -z "$target" ]]; then
+          target="$1"
+        fi
+        ;;
     esac
     shift
   done
+
+  # Validate required argument after parsing (so duplicate flags are caught first)
+  if [[ -z "$target" ]]; then
+    echo "${my_echo_prefix}${my_err_prefix} Bad input: expected target argument"
+    return 2
+  fi
+  if (( arg_count > 1 )); then
+    echo "${my_echo_prefix}${my_err_prefix} Bad input: expected 1..3 args (target + optional flags)"
+    return 2
+  fi
 
   # -------- root gate (opt-in) --------
   if $needs_root && [[ $EUID -ne 0 ]]; then
@@ -795,20 +819,44 @@ RemoveDir() {
   local RMDIR_BIN="/bin/rmdir"
   local CHFLAGS_BIN="/usr/bin/chflags"
 
-  # --- args / flags ---
-  if (($# < 1 || $# > 3)); then
-    echo "${my_echo_prefix}${my_err_prefix}Bad input: expected 1..3 args"
-    return 2
-  fi
-  local d="$1"; shift
+  # --- args / flags (parse first to catch duplicates before count validation) ---
+  local d=""
   local tolerant=false needs_root=false
+  local arg_count=0
   while (($#)); do
     case "$1" in
-      --tolerant-missing) tolerant=true ;;
-      --needs-root)       needs_root=true ;;
-      *) echo "${my_echo_prefix}${my_err_prefix}Unknown flag: $1"; return 2 ;;
+      --tolerant-missing)
+        if [[ $tolerant == true ]]; then
+          echo "${my_echo_prefix}${my_err_prefix}Bad input: duplicate --tolerant-missing flag."
+          return 2
+        fi
+        tolerant=true ;;
+      --needs-root)
+        if [[ $needs_root == true ]]; then
+          echo "${my_echo_prefix}${my_err_prefix}Bad input: duplicate --needs-root flag."
+          return 2
+        fi
+        needs_root=true ;;
+      -*) echo "${my_echo_prefix}${my_err_prefix}Unknown flag: $1"; return 2 ;;
+      *)
+        # Count non-flag arguments
+        ((arg_count++))
+        if [[ -z "$d" ]]; then
+          d="$1"
+        fi
+        ;;
     esac; shift
   done
+
+  # Validate required argument after parsing (so duplicate flags are caught first)
+  if [[ -z "$d" ]]; then
+    echo "${my_echo_prefix}${my_err_prefix}Bad input: expected path argument"
+    return 2
+  fi
+  if (( arg_count > 1 )); then
+    echo "${my_echo_prefix}${my_err_prefix}Bad input: expected 1..3 args (path + optional flags)"
+    return 2
+  fi
 
   # --- root gate (opt-in) ---
   if $needs_root && [[ $EUID -ne 0 ]]; then
@@ -2724,12 +2772,9 @@ function IdentifyLoginItemType {
   local my_err_prefix="$(printf "%-*s" "$lvw" "ERROR:")"
   local my_dbg_prefix="$(printf "%-*s" "$lvw" "DEBUG:")"
 
-  # Order-agnostic argument parsing with duplicate detection
+  # Order-agnostic argument parsing with duplicate detection (parse first to catch duplicates before count validation)
   local tolerant=false identifier=""
-  if (( $# == 0 || $# > 2 )); then
-    echo "${my_echo_prefix}${my_err_prefix}Bad input: expected <identifier> [--tolerant-missing]. Got $# args."
-    return 2
-  fi
+  local arg_count=0
   local arg
   for arg in "$@"; do
     case "$arg" in
@@ -2743,6 +2788,8 @@ function IdentifyLoginItemType {
         echo "${my_echo_prefix}${my_err_prefix}Bad input: unknown flag '$arg'."
         return 2 ;;
       *)
+        # Count non-flag arguments
+        ((arg_count++))
         if [[ -n "$identifier" ]]; then
           echo "${my_echo_prefix}${my_err_prefix}Bad input: multiple non-flag arguments."
           return 2
@@ -2751,9 +2798,13 @@ function IdentifyLoginItemType {
     esac
   done
 
-  # Validate identifier is present
+  # Validate required argument after parsing (so duplicate flags are caught first)
   if [[ -z "$identifier" ]]; then
     echo "${my_echo_prefix}${my_err_prefix}Bad input: missing identifier argument."
+    return 2
+  fi
+  if (( arg_count > 1 )); then
+    echo "${my_echo_prefix}${my_err_prefix}Bad input: expected <identifier> [--tolerant-missing]."
     return 2
   fi
 
@@ -3163,12 +3214,9 @@ function RemoveLoginItems {
   local my_err_prefix="$(printf "%-*s" "$lvw" "ERROR:")"
   local my_dbg_prefix="$(printf "%-*s" "$lvw" "DEBUG:")"
 
-  # Order-agnostic argument parsing with duplicate detection
+  # Order-agnostic argument parsing with duplicate detection (parse first to catch duplicates before count validation)
   local tolerant=false identifier=""
-  if (( $# == 0 || $# > 2 )); then
-    echo "${my_echo_prefix}${my_err_prefix}Bad input: expected <identifier> [--tolerant-missing]. Got $# args."
-    return 2
-  fi
+  local arg_count=0
   local arg
   for arg in "$@"; do
     case "$arg" in
@@ -3182,6 +3230,8 @@ function RemoveLoginItems {
         echo "${my_echo_prefix}${my_err_prefix}Bad input: unknown flag '$arg'."
         return 2 ;;
       *)
+        # Count non-flag arguments
+        ((arg_count++))
         if [[ -n "$identifier" ]]; then
           echo "${my_echo_prefix}${my_err_prefix}Bad input: multiple non-flag arguments."
           return 2
@@ -3190,9 +3240,13 @@ function RemoveLoginItems {
     esac
   done
 
-  # Validate identifier is present
+  # Validate required argument after parsing (so duplicate flags are caught first)
   if [[ -z "$identifier" ]]; then
     echo "${my_echo_prefix}${my_err_prefix}Bad input: missing identifier argument."
+    return 2
+  fi
+  if (( arg_count > 1 )); then
+    echo "${my_echo_prefix}${my_err_prefix}Bad input: expected <identifier> [--tolerant-missing]."
     return 2
   fi
 
