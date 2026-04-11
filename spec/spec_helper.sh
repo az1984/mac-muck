@@ -36,7 +36,6 @@ UNINSTALLER_SCRIPT="${PROJECT_ROOT}/src/uninstaller.sh"
 MOCK_BIN_DIR="${PROJECT_ROOT}/tools/mock_bin"
 if [[ -d "$MOCK_BIN_DIR" ]]; then
     export PATH="${MOCK_BIN_DIR}:$PATH"
-    export PATH="${MOCK_BIN_DIR}/pkgutil:${PATH}"
 fi
 
 # Provide stub globals so the functions can reference them
@@ -48,15 +47,16 @@ export LOG_FN_WIDTH="${LOG_FN_WIDTH:-24}"
 export LOG_LVL_WIDTH="${LOG_LVL_WIDTH:-10}"
 
 # Set default mock modes - can be overridden per-test
-export MOCK_PGREP_MODE="${MOCK_PGREP_MODE:-normal}"
-export MOCK_PKILL_MODE="${MOCK_PKILL_MODE:-normal}"
-export MOCK_KILL_MODE="${MOCK_KILL_MODE:-normal}"
-export MOCK_PLISTB_MODE="${MOCK_PLISTB_MODE:-normal}"
-export MOCK_LAUNCHCTL_MODE="${MOCK_LAUNCHCTL_MODE:-normal}"
-export MOCK_SFLTOOL_MODE="${MOCK_SFLTOOL_MODE:-normal}"
-export MOCK_PLUGINKIT_MODE="${MOCK_PLUGINKIT_MODE:-normal}"
-export MOCK_QLMANAGE_MODE="${MOCK_QLMANAGE_MODE:-normal}"
-export MOCK_PKGUTIL_MODE="${MOCK_PKGUTIL_MODE:-normal}"
+# Only set defaults if not already set by the test
+if [[ -z "${MOCK_PGREP_MODE:-}" ]]; then export MOCK_PGREP_MODE="normal"; fi
+if [[ -z "${MOCK_PKILL_MODE:-}" ]]; then export MOCK_PKILL_MODE="normal"; fi
+if [[ -z "${MOCK_KILL_MODE:-}" ]]; then export MOCK_KILL_MODE="normal"; fi
+if [[ -z "${MOCK_PLISTB_MODE:-}" ]]; then export MOCK_PLISTB_MODE="normal"; fi
+if [[ -z "${MOCK_LAUNCHCTL_MODE:-}" ]]; then export MOCK_LAUNCHCTL_MODE="normal"; fi
+if [[ -z "${MOCK_SFLTOOL_MODE:-}" ]]; then export MOCK_SFLTOOL_MODE="normal"; fi
+if [[ -z "${MOCK_PLUGINKIT_MODE:-}" ]]; then export MOCK_PLUGINKIT_MODE="normal"; fi
+if [[ -z "${MOCK_QLMANAGE_MODE:-}" ]]; then export MOCK_QLMANAGE_MODE="normal"; fi
+if [[ -z "${MOCK_PKGUTIL_MODE:-}" ]]; then export MOCK_PKGUTIL_MODE="normal"; fi
 
 # Set default EUID for testing (non-root by default)
 # Use FAKE_EUID/FAKE_UID instead of EUID/UID since they are readonly
