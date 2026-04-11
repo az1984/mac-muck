@@ -1,30 +1,49 @@
 #!/bin/bash
-# pkgutil wrapper - behavior controlled by environment variables
+# pkgutil wrapper - stateful mock with call tracking
 #
-# This mock wrapper simulates various pkgutil behaviors for testing.
-# Place this directory at the front of PATH in test environments.
+# This mock simulates pkgutil behavior for testing ForgetPackage.
+# Reads MOCK_PKGUTIL_MODE from environment and tracks calls via state file.
 #
-# Available modes (set via MOCK_PKGUTIL_MODE):
+# State file: /tmp/pkgutil_state
+# Format: Line 1 = mode, Line 2 = call count
+#
+# Behavior modes:
 #   - normal:           delegate to real /usr/sbin/pkgutil
 #   - missing:          simulate command not found (exit 127)
-#   - forget_fail:      simulate --forget failure
-#   - pkg_info_fail:    simulate --pkg-info failure (receipt not found)
-#   - pkg_info_ok:      simulate --pkg-info success (receipt found)
-#   - forget_success:   simulate successful forget operation (pkg_info succeeds, forget succeeds)
-#   - still_present:    simulate receipt still present after forget
+#   - forget_fail:      --forget fails, --pkg-info succeeds
+#   - pkg_info_fail:    --pkg-info always fails (receipt not found)
+#   - forget_success:   --pkg-info succeeds, --forget succeeds, then --pkg-info fails
+#   - still_present:    --forget succeeds but --pkg-info still succeeds afterward
 
-MOCK_PKGUTIL_MODE="${MOCK_PKGUTIL_MODE:-normal}"
+STATE_FILE="/tmp/pkgutil_state"
 
-case "$MOCK_PKGUTIL_MODE" in
+# If mode is set in environment, update state file with fresh state
+if [[ -n "${MOCK_PKGUTIL_MODE:-}" ]]; then
+    printf "%s\n0\n" "${MOCK_PKGUTIL_MODE}" > "$STATE_FILE"
+fi
+
+# Read mode from state file (default: normal)
+if [[ -f "$STATE_FILE" ]]; then
+    MODE=$(head -n1 "$STATE_FILE")
+    CALL_COUNT=$(tail -n1 "$STATE_FILE")
+    CALL_COUNT=$((CALL_COUNT + 1))
+    # Update call count in place
+    printf "%s\n%d\n" "$MODE" "$CALL_COUNT" > "$STATE_FILE"
+else
+    MODE="normal"
+    CALL_COUNT=0
+fi
+
+case "$MODE" in
     missing)
-        # Simulate command not found
         exit 127 ;;
     
     forget_fail)
-        # Simulate --forget failure
         if [[ "$1" == "--pkg-info" ]]; then
-            # Package exists initially
-            echo "package-id: $2"
+            _pkg_id="$2"
+            _pkg_id="${_pkg_id#^}"
+            _pkg_id="${_pkg_id%\$}"
+            echo "package-id: $_pkg_id"
             echo "version: 1.0.0"
             echo "location: /Applications"
             exit 0
@@ -34,16 +53,12 @@ case "$MOCK_PKGUTIL_MODE" in
         fi ;;
     
     pkg_info_fail)
-        # Simulate --pkg-info failure (receipt not found)
         echo "pkgutil: no package info found" >&2
         exit 1 ;;
     
     pkg_info_ok)
-        # Simulate --pkg-info success (receipt found)
         if [[ "$1" == "--pkg-info" ]]; then
-            # Get package id (may have anchors like ^...$)
             _pkg_id="$2"
-            # Strip anchors for display
             _pkg_id="${_pkg_id#^}"
             _pkg_id="${_pkg_id%\$}"
             echo "package-id: $_pkg_id"
@@ -53,13 +68,31 @@ case "$MOCK_PKGUTIL_MODE" in
         exit 0 ;;
     
     forget_success)
-        # Simulate successful forget operation
-        # First, pkg-info should succeed (package exists)
-        # Then, forget should succeed
+        # Call 1-2: --pkg-info succeeds (package exists)
+        # Call 2: --forget succeeds  
+        # Call 3+: --pkg-info fails (package gone)
         if [[ "$1" == "--pkg-info" ]]; then
-            # Get package id (may have anchors like ^...$)
+            if [[ $CALL_COUNT -le 2 ]]; then
+                _pkg_id="$2"
+                _pkg_id="${_pkg_id#^}"
+                _pkg_id="${_pkg_id%\$}"
+                echo "package-id: $_pkg_id"
+                echo "version: 1.0.0"
+                echo "location: /Applications"
+                exit 0
+            else
+                echo "pkgutil: no package info found" >&2
+                exit 1
+            fi
+        elif [[ "$1" == "--forget" ]]; then
+            exit 0
+        fi
+        exit 0 ;;
+    
+    still_present)
+        # --forget succeeds but --pkg-info still succeeds (receipt persists)
+        if [[ "$1" == "--pkg-info" ]]; then
             _pkg_id="$2"
-            # Strip anchors for display
             _pkg_id="${_pkg_id#^}"
             _pkg_id="${_pkg_id%\$}"
             echo "package-id: $_pkg_id"
@@ -68,20 +101,6 @@ case "$MOCK_PKGUTIL_MODE" in
             exit 0
         elif [[ "$1" == "--forget" ]]; then
             exit 0
-        fi
-        exit 0 ;;
-    
-    still_present)
-        # Simulate receipt still present after forget
-        if [[ "$1" == "--pkg-info" ]]; then
-            # Get package id (may have anchors like ^...$)
-            _pkg_id="$2"
-            # Strip anchors for display
-            _pkg_id="${_pkg_id#^}"
-            _pkg_id="${_pkg_id%\$}"
-            echo "package-id: $_pkg_id"
-            echo "version: 1.0.0"
-            echo "location: /Applications"
         fi
         exit 0 ;;
     

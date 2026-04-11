@@ -46,17 +46,9 @@ export DEBUG="${DEBUG:-false}"
 export LOG_FN_WIDTH="${LOG_FN_WIDTH:-24}"
 export LOG_LVL_WIDTH="${LOG_LVL_WIDTH:-10}"
 
-# Set default mock modes - can be overridden per-test
-# Only set defaults if not already set by the test
-if [[ -z "${MOCK_PGREP_MODE:-}" ]]; then export MOCK_PGREP_MODE="normal"; fi
-if [[ -z "${MOCK_PKILL_MODE:-}" ]]; then export MOCK_PKILL_MODE="normal"; fi
-if [[ -z "${MOCK_KILL_MODE:-}" ]]; then export MOCK_KILL_MODE="normal"; fi
-if [[ -z "${MOCK_PLISTB_MODE:-}" ]]; then export MOCK_PLISTB_MODE="normal"; fi
-if [[ -z "${MOCK_LAUNCHCTL_MODE:-}" ]]; then export MOCK_LAUNCHCTL_MODE="normal"; fi
-if [[ -z "${MOCK_SFLTOOL_MODE:-}" ]]; then export MOCK_SFLTOOL_MODE="normal"; fi
-if [[ -z "${MOCK_PLUGINKIT_MODE:-}" ]]; then export MOCK_PLUGINKIT_MODE="normal"; fi
-if [[ -z "${MOCK_QLMANAGE_MODE:-}" ]]; then export MOCK_QLMANAGE_MODE="normal"; fi
-if [[ -z "${MOCK_PKGUTIL_MODE:-}" ]]; then export MOCK_PKGUTIL_MODE="normal"; fi
+# Note: Mock modes are NOT set as defaults here. Each test must explicitly
+# export the MOCK_*_MODE it needs before the test runs. This ensures tests
+# are independent and the mock reads the correct mode at runtime.
 
 # Set default EUID for testing (non-root by default)
 # Use FAKE_EUID/FAKE_UID instead of EUID/UID since they are readonly
@@ -67,6 +59,9 @@ fi
 if [[ -z "${FAKE_UID:-}" ]]; then
     export FAKE_UID=1000
 fi
+
+# Note: Mock state cleanup should happen in each test AFTER assertions, not here.
+# This ensures mocks can read the correct MOCK_*_MODE environment variable set by each test.
 
 # Extract only the function definitions from the uninstaller script
 # The script structure is:
