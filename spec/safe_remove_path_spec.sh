@@ -34,13 +34,13 @@ Describe 'SafeRemovePath'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 3 when not root and --needs-root is specified'
-    export EUID=1000
-    export UID=1000
+    export FAKE_EUID=1000
+    export FAKE_UID=1000
     When call SafeRemovePath "/tmp/testpath" --needs-root
     The status should eq 3
     The output should include "Must be run as root"
-    export EUID=0
-    export UID=0
+    export FAKE_EUID=0
+    export FAKE_UID=0
   End
 
   # ─────────────────────────═══════════════════════════════════════

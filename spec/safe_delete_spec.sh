@@ -34,13 +34,13 @@ Describe 'SafeDelete'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 3 when not root and --needs-root is specified'
-    export EUID=1000
-    export UID=1000
+    export FAKE_EUID=1000
+    export FAKE_UID=1000
     When call SafeDelete "/tmp/testpath" --needs-root
     The status should eq 3
     The output should include "Must be run as root"
-    export EUID=0
-    export UID=0
+    export FAKE_EUID=0
+    export FAKE_UID=0
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -189,15 +189,15 @@ Describe 'SafeDelete'
   It 'clears immutable flags before deletion when root'
     local test_file="/tmp/safe_del_immutable_$$"
     touch "$test_file"
-    export EUID=0
-    export UID=0
+    export FAKE_EUID=0
+    export FAKE_UID=0
     # Mock rm to succeed
     rm() { return 0; }
     When call SafeDelete "$test_file"
     The status should eq 0
     rm -f "$test_file"
-    export EUID=1000
-    export UID=1000
+    export FAKE_EUID=1000
+    export FAKE_UID=1000
   End
 
 End

@@ -34,13 +34,13 @@ Describe 'UnlinkSymlink'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 3 when not root and --needs-root is specified'
-    export EUID=1000
-    export UID=1000
+    export FAKE_EUID=1000
+    export FAKE_UID=1000
     When call UnlinkSymlink "/tmp/testlink" --needs-root
     The status should eq 3
     The output should include "Must be run as root"
-    export EUID=0
-    export UID=0
+    export FAKE_EUID=0
+    export FAKE_UID=0
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -168,15 +168,15 @@ Describe 'UnlinkSymlink'
     local test_symlink="/tmp/unlink_immutable_symlink_$$"
     touch "$test_target"
     ln -s "$test_target" "$test_symlink"
-    export EUID=0
-    export UID=0
+    export FAKE_EUID=0
+    export FAKE_UID=0
     # Mock unlink to succeed
     unlink() { return 0; }
     When call UnlinkSymlink "$test_symlink"
     The status should eq 0
     rm -f "$test_target" "$test_symlink"
-    export EUID=1000
-    export UID=1000
+    export FAKE_EUID=1000
+    export FAKE_UID=1000
   End
 
   It 'handles symlink paths with spaces correctly'

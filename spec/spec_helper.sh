@@ -32,9 +32,11 @@ PROJECT_ROOT="/Users/andrewezimmer/Documents/GitHub/mac-muck"
 UNINSTALLER_SCRIPT="${PROJECT_ROOT}/src/uninstaller.sh"
 
 # Add mock_bin to PATH if it exists (for tool mocking)
+# This must come BEFORE any other PATH modifications
 MOCK_BIN_DIR="${PROJECT_ROOT}/tools/mock_bin"
 if [[ -d "$MOCK_BIN_DIR" ]]; then
     export PATH="${MOCK_BIN_DIR}:$PATH"
+    export PATH="${MOCK_BIN_DIR}/pkgutil:${PATH}"
 fi
 
 # Provide stub globals so the functions can reference them
@@ -58,8 +60,13 @@ export MOCK_PKGUTIL_MODE="${MOCK_PKGUTIL_MODE:-normal}"
 
 # Set default EUID for testing (non-root by default)
 # Use FAKE_EUID/FAKE_UID instead of EUID/UID since they are readonly
-export FAKE_EUID="${FAKE_EUID:-1000}"
-export FAKE_UID="${FAKE_UID:-1000}"
+# Only set defaults if not already set by the test
+if [[ -z "${FAKE_EUID:-}" ]]; then
+    export FAKE_EUID=1000
+fi
+if [[ -z "${FAKE_UID:-}" ]]; then
+    export FAKE_UID=1000
+fi
 
 # Extract only the function definitions from the uninstaller script
 # The script structure is:
