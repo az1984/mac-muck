@@ -3,11 +3,39 @@
 #
 # Usage: Include "spec_helper.sh" in your spec files.
 # ShellSpec will source this automatically if configured in .shellspec.
+#
+# MOCKING FRAMEWORK:
+# This helper sets up a complete mocking infrastructure for testing.
+# 
+# To use mocks, set environment variables before tests:
+#   export MOCK_PGREP_MODE="running"     # Simulate process running
+#   export MOCK_PKILL_MODE="fail"        # Simulate pkill failure
+#   export MOCK_KILL_MODE="check_ok"     # Simulate kill -0 check succeeding
+#   export MOCK_LAUNCHCTL_MODE="bootout_ok"  # Simulate successful bootout
+#   export MOCK_SFLTOOL_MODE="daemon"    # Simulate daemon-type login item
+#
+# To test root scenarios, set:
+#   export EUID=0
+#   export UID=0
+#
+# To test non-root scenarios:
+#   export EUID=1000
+#   export UID=1000
+#
+# To test missing tools:
+#   export MOCK_PGREP_MODE="missing"     # Simulate missing pgrep binary
+#   export MOCK_PKILL_MODE="missing"     # Simulate missing pkill binary
 
 # Path to the uninstaller script under test
 # Use absolute path since shellspec may change working directory
 PROJECT_ROOT="/Users/andrewezimmer/Documents/GitHub/mac-muck"
 UNINSTALLER_SCRIPT="${PROJECT_ROOT}/src/uninstaller.sh"
+
+# Add mock_bin to PATH if it exists (for tool mocking)
+MOCK_BIN_DIR="${PROJECT_ROOT}/tools/mock_bin"
+if [[ -d "$MOCK_BIN_DIR" ]]; then
+    export PATH="${MOCK_BIN_DIR}:$PATH"
+fi
 
 # Provide stub globals so the functions can reference them
 export APP_NAME="${APP_NAME:-TestApp}"
@@ -16,6 +44,22 @@ export VERBOSE="${VERBOSE:-false}"
 export DEBUG="${DEBUG:-false}"
 export LOG_FN_WIDTH="${LOG_FN_WIDTH:-24}"
 export LOG_LVL_WIDTH="${LOG_LVL_WIDTH:-10}"
+
+# Set default mock modes - can be overridden per-test
+export MOCK_PGREP_MODE="${MOCK_PGREP_MODE:-normal}"
+export MOCK_PKILL_MODE="${MOCK_PKILL_MODE:-normal}"
+export MOCK_KILL_MODE="${MOCK_KILL_MODE:-normal}"
+export MOCK_PLISTB_MODE="${MOCK_PLISTB_MODE:-normal}"
+export MOCK_LAUNCHCTL_MODE="${MOCK_LAUNCHCTL_MODE:-normal}"
+export MOCK_SFLTOOL_MODE="${MOCK_SFLTOOL_MODE:-normal}"
+export MOCK_PLUGINKIT_MODE="${MOCK_PLUGINKIT_MODE:-normal}"
+export MOCK_QLMANAGE_MODE="${MOCK_QLMANAGE_MODE:-normal}"
+export MOCK_PKGUTIL_MODE="${MOCK_PKGUTIL_MODE:-normal}"
+
+# Set default EUID for testing (non-root by default)
+# Can be overridden by setting EUID=0 before running tests
+export EUID="${EUID:-1000}"
+export UID="${UID:-1000}"
 
 # Extract only the function definitions from the uninstaller script
 # The script structure is:
