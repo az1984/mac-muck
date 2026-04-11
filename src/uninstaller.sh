@@ -395,19 +395,6 @@ ForgetPackage() {
     return 2
   fi
 
-  # --- root required ---
-  if [[ $EUID -ne 0 ]]; then
-    echo "${my_echo_prefix}${my_err_prefix}Needs root: run as sudo/root."
-    return 3
-  fi
-
-  # --- tool presence ---
-  local PKGUTIL_BIN="/usr/sbin/pkgutil"
-  if [[ ! -x "$PKGUTIL_BIN" ]]; then
-    echo "${my_echo_prefix}${my_err_prefix}Missing required tool: $PKGUTIL_BIN"
-    return 1
-  fi
-
   # --- normalize anchors for validation ---
   local has_leading_caret=false has_trailing_dollar=false
   [[ "${raw_arg:0:1}" == "^" ]] && has_leading_caret=true
@@ -440,6 +427,19 @@ ForgetPackage() {
   if [[ "$pkg_id" =~ [[:space:]/\\\*\?\[\]\{\}\|\;\:\<\>\&\`\'\"] ]]; then
     echo "${my_echo_prefix}${my_err_prefix}Invalid characters in package id: ${validation_view}"
     return 2
+  fi
+
+  # --- root required ---
+  if [[ $EUID -ne 0 ]]; then
+    echo "${my_echo_prefix}${my_err_prefix}Needs root: run as sudo/root."
+    return 3
+  fi
+
+  # --- tool presence ---
+  local PKGUTIL_BIN="/usr/sbin/pkgutil"
+  if [[ ! -x "$PKGUTIL_BIN" ]]; then
+    echo "${my_echo_prefix}${my_err_prefix}Missing required tool: $PKGUTIL_BIN"
+    return 1
   fi
 
   # --- presence check ---
@@ -1684,6 +1684,13 @@ DisableLaunchDaemon() {
     return 2
   fi
 
+  # --- strict label validation (reverse-DNS with ≥3 labels) ---
+  local id_re='^[A-Za-z][A-Za-z0-9]*(\.[A-Za-z][A-Za-z0-9_-]*){2,}$'
+  if [[ ! "$label" =~ $id_re ]]; then
+    echo "${my_echo_prefix}${my_err_prefix}Invalid label format: $label"
+    return 2
+  fi
+
   # --- root check (daemons always require root) ---
   if [[ $EUID -ne 0 ]]; then
     echo "${my_echo_prefix}${my_err_prefix}Needs root: LaunchDaemons require root to disable."
@@ -1695,13 +1702,6 @@ DisableLaunchDaemon() {
   if [[ ! -x "$LAUNCHCTL_BIN" ]]; then
     echo "${my_echo_prefix}${my_err_prefix}Missing required tool: $LAUNCHCTL_BIN"
     return 1
-  fi
-
-  # --- strict label validation (reverse-DNS with ≥3 labels) ---
-  local id_re='^[A-Za-z][A-Za-z0-9]*(\.[A-Za-z][A-Za-z0-9_-]*){2,}$'
-  if [[ ! "$label" =~ $id_re ]]; then
-    echo "${my_echo_prefix}${my_err_prefix}Invalid label format: $label"
-    return 2
   fi
 
   # --- pre-check: is the daemon known to launchctl? ---
@@ -2659,6 +2659,13 @@ function IdentifyLoginItemType {
     return 2
   fi
 
+  # Validate identifier format (reverse-DNS with ≥2 labels for flexibility)
+  local id_re='^[A-Za-z][A-Za-z0-9]*(\.[A-Za-z][A-Za-z0-9_-]*)+$'
+  if [[ ! "$identifier" =~ $id_re ]]; then
+    echo "${my_echo_prefix}${my_err_prefix}Invalid identifier format: $identifier"
+    return 2
+  fi
+
   # Root gate (mandatory - sfltool dumpbtm requires root)
   if [[ $EUID -ne 0 ]]; then
     echo "${my_echo_prefix}${my_err_prefix}Needs root: sfltool dumpbtm requires root."
@@ -2670,13 +2677,6 @@ function IdentifyLoginItemType {
   if [[ ! -x "$SFLTOOL_BIN" ]]; then
     echo "${my_echo_prefix}${my_err_prefix}Missing required tool: $SFLTOOL_BIN"
     return 1
-  fi
-
-  # Validate identifier format (reverse-DNS with ≥2 labels for flexibility)
-  local id_re='^[A-Za-z][A-Za-z0-9]*(\.[A-Za-z][A-Za-z0-9_-]*)+$'
-  if [[ ! "$identifier" =~ $id_re ]]; then
-    echo "${my_echo_prefix}${my_err_prefix}Invalid identifier format: $identifier"
-    return 2
   fi
 
   # Dump BTM database and capture output to temp file
