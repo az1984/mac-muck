@@ -1,3 +1,6 @@
+# Source the spec helper
+. ./spec/spec_helper.sh
+
 Describe 'DisableLaunchAgent'
 
   # ─────────────────────────═══════════════════════════════════════

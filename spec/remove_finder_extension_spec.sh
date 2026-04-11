@@ -1,3 +1,4 @@
+. ./spec/spec_helper.sh
 Describe 'RemoveFinderExtension'
 
   # --- Bad input (rc 2) ---

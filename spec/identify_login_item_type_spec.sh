@@ -1,3 +1,4 @@
+. ./spec/spec_helper.sh
 Describe 'IdentifyLoginItemType'
 
   # --- Bad input (rc 2) ---

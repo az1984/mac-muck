@@ -1,3 +1,4 @@
+. ./spec/spec_helper.sh
 Describe 'DisableLaunchDaemon'
 
   # ─────────────────────────═══════════════════════════════════════

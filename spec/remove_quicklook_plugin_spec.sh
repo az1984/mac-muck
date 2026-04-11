@@ -1,3 +1,4 @@
+. ./spec/spec_helper.sh
 Describe 'RemoveQuickLookPlugin'
 
   # --- Bad input (rc 2) ---
