@@ -2092,6 +2092,27 @@ UnloadAndRemoveLaunchDaemon() {
     return 2
   fi
 
+  # --- locate the plist ---
+  local plist_name="${label}.plist"
+  local sys_plist="/Library/LaunchDaemons/${plist_name}"
+
+  # Check if plist exists first - if not found and tolerant, return success without root
+  if [[ ! -f "$sys_plist" ]]; then
+    if $tolerant; then
+      [[ ${VERBOSE:-false} == true || ${DEBUG:-false} == true ]] && \
+        echo "${my_echo_prefix}${my_vrb_prefix}LaunchDaemon plist not found: $sys_plist; tolerant mode → success."
+      return 0
+    else
+      # Only check root if we need to proceed with removal (plist exists or not tolerant)
+      if [[ $EUID -ne 0 ]]; then
+        echo "${my_echo_prefix}${my_err_prefix}Needs root: LaunchDaemons require root to unload and remove."
+        return 3
+      fi
+      echo "${my_echo_prefix}${my_err_prefix}LaunchDaemon plist not found: $sys_plist."
+      return 4
+    fi
+  fi
+
   # --- root check (daemons always require root) ---
   if [[ $EUID -ne 0 ]]; then
     echo "${my_echo_prefix}${my_err_prefix}Needs root: LaunchDaemons require root to unload and remove."
@@ -2103,21 +2124,6 @@ UnloadAndRemoveLaunchDaemon() {
   if [[ ! -x "$LAUNCHCTL_BIN" ]]; then
     echo "${my_echo_prefix}${my_err_prefix}Missing required tool: $LAUNCHCTL_BIN"
     return 1
-  fi
-
-  # --- locate the plist ---
-  local plist_name="${label}.plist"
-  local sys_plist="/Library/LaunchDaemons/${plist_name}"
-
-  if [[ ! -f "$sys_plist" ]]; then
-    if $tolerant; then
-      [[ ${VERBOSE:-false} == true || ${DEBUG:-false} == true ]] && \
-        echo "${my_echo_prefix}${my_vrb_prefix}LaunchDaemon plist not found: $sys_plist; tolerant mode → success."
-      return 0
-    else
-      echo "${my_echo_prefix}${my_err_prefix}LaunchDaemon plist not found: $sys_plist."
-      return 4
-    fi
   fi
   [[ ${DEBUG:-false} == true ]] && echo "${my_echo_prefix}${my_dbg_prefix}Found daemon plist: $sys_plist"
 
