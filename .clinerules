@@ -138,3 +138,64 @@ Run specs with: `shellspec`
 - Do NOT use `rm -rf` — use `SafeRemovePath` which walks bottom-up with `find -depth`
 - Do NOT implement a `RemoveLoginItem()` action function — login items are removed by removing their underlying mechanism (use `IdentifyLoginItemType` to detect what that is)
 - Do NOT call `qlmanage -r` inside `RemoveQuickLookPlugin` — it goes in main() after the loop
+
+## ShellSpec test writing rules (MANDATORY)
+
+These rules govern how tests are written and fixed. The goal is tests that **verify real behavior**, not tests that are engineered to pass.
+
+### The test specification
+`docs/UNIT_TESTING.md` is the authoritative checklist of every test that must exist and pass. Each checkbox is one ShellSpec `It` block. Before writing or fixing any test, find the corresponding checkbox in UNIT_TESTING.md. If there is no checkbox for what you're doing, you are either adding coverage (good — add the checkbox too) or doing something off-spec (stop and reconsider). When a test passes correctly, check its box in UNIT_TESTING.md. The checked-box count is the real progress metric, not the shellspec pass count.
+
+### The prime directive
+The test is the authority on what the function SHOULD do. If a test fails, the FIRST assumption is that the function has a bug. Only after confirming the function is correct should the test be changed. Never weaken a test to make it pass.
+
+### What counts as a legitimate fix
+- Fixing the FUNCTION so it produces the output the test expects
+- Fixing the MOCK so it simulates the right macOS behavior
+- Adding missing mock setup that a test needs to run (e.g., `export MOCK_LAUNCHCTL_MODE="not_found"`)
+- Replacing `Skip "reason"` with a real test that uses mocks — this is ALWAYS preferred
+
+### What is NOT a legitimate fix
+- Changing `The output should include "Bad input"` to match whatever the function happens to print — the function should print "Bad input", not the other way around
+- Changing `The status should eq 2` to `The status should eq 0` because the function returns 0 — the function should return 2
+- Adding `Skip` to a previously-working test that now fails — if it worked before, the regression is in the code, not the test
+- Removing assertions from a test to make it pass
+- Broadening a string match (e.g., changing `include "not present"` to `include "not"`) to accommodate changed output
+- Wrapping a test body in a subshell `( ... )` to swallow failures
+
+### Mock rules
+- Mocks must simulate REAL macOS tool behavior, not just return convenient exit codes
+- The launchctl mock must be subcommand-aware: `launchctl print`, `launchctl bootout`, and `launchctl print-disabled` can all be called in a single function invocation and must return appropriate results for each subcommand. A single global mode is insufficient.
+- Mock modes should be set with `export` BEFORE the `When call` and `unset` AFTER the assertions
+- Each test must be independent — mock state from one test must not leak into the next
+- When a mock needs to behave differently on successive calls to the same command (e.g., pkgutil --pkg-info succeeds pre-forget but fails post-forget), use a stateful mock with a counter or call-tracking mechanism
+
+### Skip rules
+- `Skip` is acceptable ONLY when the test genuinely cannot run in the current environment (e.g., requires macOS-specific tools not available in CI, or requires real root)
+- `Skip` is NEVER acceptable as a way to defer a failing test
+- If you add a Skip, the reason string must explain what specific environmental prerequisite is missing
+- Every new `Skip` added must be documented in TEST_COMPLETION.md with a plan to eventually replace it with a real test using mocks
+- The total number of Skips should only ever decrease, never increase. If your change increases the skip count, stop and find a way to write the test with mocks instead.
+
+### Production code integrity
+- Do NOT modify `src/uninstaller.sh` to make a test pass unless the function genuinely has a bug
+- Do NOT add test-only code paths to production functions (e.g., `if [[ $TESTING == true ]]; then`)
+- The `_get_effective_euid()` / `FAKE_EUID` pattern is the ONE allowed exception for testability — do not add more
+- Do NOT change log message strings in production code to match test expectations — match the test expectations to the actual log messages, then freeze them
+- Do NOT change return codes in production code to satisfy tests — the return code scheme (0-5) is standardized and fixed
+
+### Test structure
+- Every spec file starts with `. ./spec/spec_helper.sh`
+- Use `Describe 'FunctionName'` with the exact function name
+- Group tests with comment headers matching this pattern: `# --- Category (rc N) ---`
+- Every `It` block must have at least one assertion (`The status should eq N`)
+- Happy-path tests must assert BOTH status AND meaningful output where applicable
+- Cleanup (`unset`, `rm -f`) must happen AFTER assertions, not before
+- Do not use subshells `( ... )` around `When call` — this is invalid ShellSpec and silently breaks
+
+### When in doubt
+- Read the function's header comment — the `Returns:` section is the contract
+- Read `docs/BASH_CODING_STANDARDS.md` section 4 (Return codes) — this is the law
+- If the function doesn't match its own header comment, fix the function
+- If the test doesn't match the function's header comment, fix the test
+- If neither matches, fix the function first, then align the test

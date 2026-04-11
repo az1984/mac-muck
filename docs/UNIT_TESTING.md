@@ -1,490 +1,531 @@
-# Unit Testing Plan — macOS Universal Uninstaller
+# Unit Testing Spec — macOS Universal Uninstaller
 
-This document outlines unit testing strategies for all major functions in the uninstaller script. Each function's possible return codes (rc 0–5) are documented with test scenarios and expected outcomes.
+This document is the **authoritative test specification**. Each checkbox is a single ShellSpec test that must exist and pass. The `.clinerules` file refers back to this document — if it's not checked here, it's not done.
 
----
+**Rules for checking a box:**
+- The test EXISTS in the correct spec file
+- The test PASSES (not skipped, not warned, not failed)
+- The test asserts the CORRECT return code per the function's header comment
+- The test asserts MEANINGFUL output (not just status — check the error message too)
+- The test does NOT modify production code in `src/uninstaller.sh` to pass
+- Mocks simulate real macOS behavior, not just convenient exit codes
 
-## Test Infrastructure
-
-### spec_helper.sh Function Extraction
-
-The test helper (`spec/spec_helper.sh`) uses a function extraction approach to load only the function definitions from `src/uninstaller.sh` without executing the script's main entry point. This is necessary because:
-
-1. The uninstaller script follows a strict four-section layout:
-   - **Section 1: Config** — global variables and target arrays
-   - **Section 2: main()** — defined but not called
-   - **Section 3: Functions** — all helper function definitions
-   - **Section 4: ParseInput "$@" then main "$@"** — script invocation
-
-2. The `spec_helper.sh` extracts functions between the "# Functions area" and "# Run" markers using `sed`, then sources the extracted content.
-
-3. This approach allows tests to run in a non-root shell environment while still having access to all function definitions.
-
-### Stub Environment Variables
-
-The `spec_helper.sh` sets up the following stub globals that functions reference:
-
-| Variable | Default Value | Purpose |
-|----------|---------------|---------|
-| `APP_NAME` | `TestApp` | Application name for logging |
-| `ECHO_PREFIX` | `${APP_NAME} Uninstaller.sh - ` | Logging prefix |
-| `VERBOSE` | `false` | Verbose output toggle |
-| `DEBUG` | `false` | Debug output toggle |
-| `LOG_FN_WIDTH` | `24` | Function name column width |
-| `LOG_LVL_WIDTH` | `10` | Log level column width |
-
-### Root Check Simulation
-
-For tests that require root privileges (Category 3 tests), the `EUID` and `UID` environment variables can be set to `0` to simulate a root environment:
-
-```bash
-export EUID=0
-export UID=0
-```
-
-This allows tests to bypass the root gate and verify other functionality without requiring actual root access.
+**Rules for Skip:**
+- A Skip is NOT a checkmark. Leave the box unchecked.
+- Only use Skip when the test literally cannot run (missing macOS tool in CI, needs real root)
+- If a mock can make it runnable, write the mock and check the box
 
 ---
 
-## Coding Standards for Testability
+## ForgetPackage — `spec/forget_package_spec.sh`
 
-### Input Validation Before Root Check
+### Bad input (rc 2)
+- [ ] No arguments → rc 2, output includes "Bad input"
+- [ ] Single-label id (e.g., `"notreverse"`) → rc 2, output includes "Invalid"
+- [ ] Two-label id (e.g., `"com.vendor"`) → rc 2, output includes "Invalid"
+- [ ] Id starting with number (e.g., `"1com.vendor.app"`) → rc 2, output includes "Invalid"
+- [ ] Duplicate `--tolerant-missing` flag → rc 2, output includes "duplicate"
+- [ ] Unknown flag `--bogus` → rc 2, output includes "unknown flag"
+- [ ] Internal anchors (e.g., `"com.vendor^.app"`) → rc 2, output includes "anchors"
+- [ ] Trailing space in id → rc 2, output includes "Invalid"
+- [ ] Leading space in id → rc 2, output includes "Invalid"
 
-All functions must validate input arguments **before** checking for root privileges. This ensures that:
+### Root check (rc 3)
+- [ ] FAKE_EUID=1000, valid id → rc 3, output includes "root"
 
-1. Invalid input returns rc 2 (bad input) regardless of root status
-2. Tests can verify input validation without needing root access
-3. Error messages are consistent and predictable
+### Tolerant missing (rc 0)
+- [ ] FAKE_EUID=0, mock pkgutil --pkg-info fails, `--tolerant-missing` → rc 0
 
-**Correct Order:**
-1. Check argument count
-2. Parse flags (with duplicate detection)
-3. Validate argument formats (reverse-DNS, paths, etc.)
-4. Check root (if required)
-5. Proceed with operation
+### Strict missing (rc 4)
+- [ ] FAKE_EUID=0, mock pkgutil --pkg-info fails, no tolerance flag → rc 4, output includes "not present"
 
-**Incorrect Order (causes test failures):**
-1. Check argument count
-2. Parse flags
-3. Check root ← Too early!
-4. Validate argument formats
+### Happy path (rc 0)
+- [ ] FAKE_EUID=0, mock pkgutil --pkg-info succeeds then --forget succeeds then --pkg-info fails (gone) → rc 0
+- [ ] Anchored format `"^com.vendor.app$"` → rc 0 (anchors normalized)
+- [ ] Leading `^` only → rc 0
+- [ ] Trailing `$` only → rc 0
 
----
+### Verify-after failure (rc 5)
+- [ ] Mock --forget succeeds but --pkg-info still succeeds afterward (receipt persists) → rc 5, output includes "still present"
+- [ ] Mock --forget fails → rc 5
 
-## Return Code Scheme
+### Tool presence (rc 1)
+- [ ] pkgutil binary not found at expected path → rc 1, output includes "Missing required tool"
 
-| Code | Meaning | Description |
-|------|---------|-------------|
-| 0 | Success | Operation completed successfully (or target absent with `--tolerant-missing`) |
-| 1 | Generic Failure | Internal error, missing tool, or unexpected failure |
-| 2 | Bad Input | Missing args, unknown flag, invalid format, duplicate flag |
-| 3 | Needs Root | Function requires root but EUID != 0 (when `--needs-root` specified) |
-| 4 | Not Present (Strict) | Target not found and `--tolerant-missing` NOT specified |
-| 5 | Operation Failed | Action attempted but verify-after shows it didn't take |
-
----
-
-## Function Test Plans
-
-### 1. ForgetPackage
-
-**Purpose:** Remove a macOS package receipt using `pkgutil --forget`.
-
-#### Test Scenarios
-
-| Test Case | Input | Expected rc | Notes |
-|-----------|-------|-------------|-------|
-| Happy path — present pkg | `com.vendor.pkg` | 0 | Receipt removed, verify shows absent |
-| Happy path — tolerant missing | `com.vendor.pkg` `--tolerant-missing` | 0 | Receipt absent, rc 0 due to tolerance |
-| Bad input — missing id | (no args) | 2 | No package id provided |
-| Bad input — too many args | `pkg1 pkg2` | 2 | Multiple non-flag args |
-| Bad input — unknown flag | `com.vendor.pkg` `--invalid` | 2 | Unknown flag rejected |
-| Bad input — invalid id format | `badid` | 2 | Reverse-DNS with ≥3 labels required |
-| Bad input — duplicate flag | `com.vendor.pkg` `--tolerant-missing` `--tolerant-missing` | 2 | Duplicate flag detected |
-| Not present — strict | `com.missing.pkg` | 4 | Receipt not found, no tolerance |
-| Operation failed — still present | `com.vendor.pkg` (mocked to persist) | 5 | Forget succeeded but verify shows still present |
-| Needs root | `com.vendor.pkg` (non-root) | 3 | EUID != 0 |
-
-#### Mocking Strategy
-
-- Mock `/usr/sbin/pkgutil` to simulate presence/absence
-- Mock `pkgutil --forget` to succeed or fail
-- Mock `pkgutil --pkg-info` for verify-after step
+### Order-agnostic args
+- [ ] `--tolerant-missing` before id → rc 0 (same as after)
+- [ ] `--tolerant-missing` after id → rc 0
 
 ---
 
-### 2. QuitAppByPath
+## QuitAppByPath — `spec/quit_app_by_path_spec.sh`
 
-**Purpose:** Quit an application by bundle path, binary path, process name, or PID.
+### Bad input (rc 2)
+- [ ] No arguments → rc 2, output includes "Bad input"
+- [ ] Unknown flag `--bogus` → rc 2, output includes "unknown flag"
+- [ ] Duplicate `--tolerant-missing` → rc 2, output includes "duplicate"
 
-#### Test Scenarios
+### Not present (rc 4)
+- [ ] Bundle path does not exist on disk, no tolerance → rc 4
+- [ ] Path exists but is not a `.app` bundle → rc 1 (invalid bundle)
 
-| Test Case | Input | Expected rc | Notes |
-|-----------|-------|-------------|-------|
-| Happy path — bundle quit | `/Applications/App.app` | 0 | App terminated successfully |
-| Happy path — not running | `/Applications/NotRunning.app` `--tolerant-missing` | 0 | App not running, rc 0 |
-| Happy path — PID kill | `12345` | 0 | Process terminated |
-| Happy path — process name | `processname` | 0 | Process killed by name |
-| Bad input — missing arg | (no args) | 2 | No target provided |
-| Bad input — too many args | `target1 target2` | 3 | Multiple targets |
-| Bad input — unknown flag | `target` `--invalid` | 2 | Unknown flag rejected |
-| Not present — strict | `/Applications/Missing.app` | 4 | Bundle path absent, no tolerance |
-| Operation failed — verify | `target` (mocked to stay running) | 5 | Signal sent but process still running |
-| Bundle path invalid | `/not/an/app` | 2 | Not an .app bundle |
+### Tolerant missing (rc 0)
+- [ ] Bundle path does not exist, `--tolerant-missing` → rc 0
+- [ ] Process not running (pgrep returns 1), `--tolerant-missing` → rc 0
 
-#### Mocking Strategy
+### Happy path (rc 0)
+- [ ] PID mode: mock kill -0 succeeds, pkill succeeds, verify pgrep returns 1 → rc 0
+- [ ] Bundle mode: mock PlistBuddy returns executable name, pkill succeeds → rc 0
+- [ ] Process name mode: pkill succeeds, pgrep returns 1 → rc 0
 
-- Mock `/usr/bin/pkill`, `/usr/bin/pgrep` to simulate success/failure
-- Mock `/usr/libexec/PlistBuddy` to return CFBundleExecutable
-- Mock `/bin/kill` for PID mode
-- Simulate process staying alive for verify-after failure
+### Verify-after failure (rc 5)
+- [ ] Mock pkill succeeds but pgrep still returns 0 (process alive) → rc 5
 
----
-
-### 3. SafeRemovePath
-
-**Purpose:** Walk a path bottom-up and delete all elements safely.
-
-#### Test Scenarios
-
-| Test Case | Input | Expected rc | Notes |
-|-----------|-------|-------------|-------|
-| Happy path — directory tree | `/path/to/dir` (exists) | 0 | All nodes removed bottom-up |
-| Happy path — tolerant missing | `/nonexistent` `--tolerant-missing` | 0 | Path absent, rc 0 due to tolerance |
-| Happy path — symlink | `/path/to/symlink` | 0 | Symlink unlinked |
-| Happy path — single file | `/path/to/file` | 0 | File removed |
-| Bad input — missing arg | (no args) | 2 | No path provided |
-| Bad input — too many args | `path1 path2` | 2 | Multiple paths |
-| Bad input — unknown flag | `path` `--invalid` | 2 | Unknown flag rejected |
-| Not present — strict | `/nonexistent` | 4 | Path absent, no tolerance |
-| Operation failed — verify | `path` (mocked to persist) | 5 | Delete attempted but verify shows present |
-
-#### Mocking Strategy
-
-- Mock `/usr/bin/find` to return node list
-- Mock `SafeDelete`, `RemoveDir`, `UnlinkSymlink` to succeed/fail
-- Simulate file persisting after delete for verify-after failure
+### Tool presence (rc 1)
+- [ ] pgrep not found → rc 1
+- [ ] pkill not found → rc 1
 
 ---
 
-### 4. DisableLaunchAgent
+## SafeRemovePath — `spec/safe_remove_path_spec.sh`
 
-**Purpose:** Disable a LaunchAgent via `launchctl disable` for all graphical users.
+### Bad input (rc 2)
+- [ ] No arguments → rc 2, output includes "Bad input"
+- [ ] Too many non-flag arguments → rc 2
+- [ ] Unknown flag → rc 2
 
-#### Test Scenarios
+### Root check (rc 3)
+- [ ] FAKE_EUID=1000, `--needs-root` flag → rc 3
 
-| Test Case | Input | Expected rc | Notes |
-|-----------|-------|-------------|-------|
-| Happy path — single user | `com.vendor.agent` | 0 | Disabled, verified disabled |
-| Happy path — multiple users | `com.vendor.agent` (2 users) | 0 | Disabled for all users |
-| Happy path — tolerant missing | `com.missing.agent` `--tolerant-missing` | 0 | Not found, rc 0 due to tolerance |
-| Bad input — missing label | (no args) | 2 | No label provided |
-| Bad input — too many args | `label1 label2` | 2 | Multiple labels |
-| Bad input — unknown flag | `label` `--invalid` | 2 | Unknown flag rejected |
-| Bad input — invalid label | `badlabel` | 2 | Reverse-DNS with ≥3 labels required |
-| Bad input — duplicate flag | `label` `--tolerant-missing` `--tolerant-missing` | 2 | Duplicate flag detected |
-| Not present — strict | `com.missing.agent` | 4 | Not found in any user domain |
-| Operation failed — verify | `label` (mocked to stay enabled) | 5 | Disable attempted but verify shows enabled |
-| No graphical users | (no users) | 4 | No users to disable for |
+### Tolerant missing (rc 0)
+- [ ] Path does not exist, `--tolerant-missing` → rc 0
 
-#### Mocking Strategy
+### Strict missing (rc 4)
+- [ ] Path does not exist, no tolerance → rc 4
 
-- Mock `ListGraphicalUsers` to return test users
-- Mock `/bin/launchctl print` to simulate found/not found
-- Mock `/bin/launchctl disable` to succeed
-- Mock `/bin/launchctl print-disabled` for verify-after
+### Happy path (rc 0)
+- [ ] Existing file removed → rc 0
+- [ ] Existing directory removed → rc 0
+- [ ] Symlink removed → rc 0
+
+### Verify-after failure (rc 5)
+- [ ] Delete attempted but path still exists afterward → rc 5
 
 ---
 
-### 5. DisableLaunchDaemon
+## SafeDelete — `spec/safe_delete_spec.sh`
 
-**Purpose:** Disable a LaunchDaemon via `launchctl disable` in system domain.
+### Bad input (rc 2)
+- [ ] No arguments → rc 2
+- [ ] Unknown flag → rc 2
 
-#### Test Scenarios
+### Root check (rc 3)
+- [ ] FAKE_EUID=1000, `--needs-root` → rc 3
 
-| Test Case | Input | Expected rc | Notes |
-|-----------|-------|-------------|-------|
-| Happy path — present | `com.vendor.daemon` | 0 | Disabled, verified disabled |
-| Happy path — tolerant missing | `com.missing.daemon` `--tolerant-missing` | 0 | Not found, rc 0 due to tolerance |
-| Bad input — missing label | (no args) | 2 | No label provided |
-| Bad input — too many args | `label1 label2` | 2 | Multiple labels |
-| Bad input — unknown flag | `label` `--invalid` | 2 | Unknown flag rejected |
-| Bad input — invalid label | `badlabel` | 2 | Reverse-DNS with ≥3 labels required |
-| Bad input — duplicate flag | `label` `--tolerant-missing` `--tolerant-missing` | 2 | Duplicate flag detected |
-| Not present — strict | `com.missing.daemon` | 4 | Not found in system domain |
-| Operation failed — verify | `label` (mocked to stay enabled) | 5 | Disable attempted but verify shows enabled |
-| Needs root | `label` (non-root) | 3 | Daemons always require root |
+### Tolerant missing (rc 0)
+- [ ] File does not exist, `--tolerant-missing` → rc 0
 
-#### Mocking Strategy
+### Strict missing (rc 4)
+- [ ] File does not exist, no tolerance → rc 4
 
-- Mock `/bin/launchctl print` to simulate found/not found
-- Mock `/bin/launchctl disable` to succeed
-- Mock `/bin/launchctl print-disabled` for verify-after
+### Happy path (rc 0)
+- [ ] Regular file deleted → rc 0
+
+### Verify-after failure (rc 5)
+- [ ] rm succeeds but file still present → rc 5
 
 ---
 
-### 6. UnloadAndRemoveLaunchAgent
+## RemoveDir — `spec/remove_dir_spec.sh`
 
-**Purpose:** Disable, unload, and remove a LaunchAgent plist by label.
+### Bad input (rc 2)
+- [ ] No arguments → rc 2
+- [ ] Unknown flag → rc 2
 
-#### Test Scenarios
+### Root check (rc 3)
+- [ ] FAKE_EUID=1000, `--needs-root` → rc 3
 
-| Test Case | Input | Expected rc | Notes |
-|-----------|-------|-------------|-------|
-| Happy path — system agent | `com.vendor.agent` (in /Library/LaunchAgents) | 0 | Disabled, bootout, plist removed |
-| Happy path — user agent | `com.vendor.agent` (in ~/Library/LaunchAgents) | 0 | Disabled, bootout, plist removed |
-| Happy path — tolerant missing | `com.missing.agent` `--tolerant-missing` | 0 | Not found, rc 0 due to tolerance |
-| Bad input — missing label | (no args) | 2 | No label provided |
-| Bad input — too many args | `label1 label2` | 2 | Multiple labels |
-| Bad input — unknown flag | `label` `--invalid` | 2 | Unknown flag rejected |
-| Bad input — invalid label | `badlabel` | 2 | Reverse-DNS with ≥3 labels required |
-| Not present — strict | `com.missing.agent` | 4 | No plist found |
-| Operation failed — bootout | `label` (mocked bootout failure) | 5 | Bootout failed, verify shows running |
-| Operation failed — delete | `label` (mocked SafeDelete failure) | 5 | Plist delete failed |
+### Tolerant missing (rc 0)
+- [ ] Directory does not exist, `--tolerant-missing` → rc 0
 
-#### Mocking Strategy
+### Strict missing (rc 4)
+- [ ] Directory does not exist, no tolerance → rc 4
 
-- Mock `ListGraphicalUsers` to return test users
-- Mock `/bin/launchctl disable`, `bootout` to succeed/fail
-- Mock `SafeDelete` to succeed/fail
-- Mock `VerifyServiceUnloaded` to simulate verification
+### Happy path (rc 0)
+- [ ] Empty directory removed → rc 0
+
+### Not a directory
+- [ ] Path exists but is a file, not a directory → rc 2 or rc 5 (per function contract)
 
 ---
 
-### 7. UnloadAndRemoveLaunchDaemon
+## UnlinkSymlink — `spec/unlink_symlink_spec.sh`
 
-**Purpose:** Disable, unload, and remove a LaunchDaemon plist by label.
+### Bad input (rc 2)
+- [ ] No arguments → rc 2
+- [ ] Unknown flag → rc 2
 
-#### Test Scenarios
+### Root check (rc 3)
+- [ ] FAKE_EUID=1000, `--needs-root` → rc 3
 
-| Test Case | Input | Expected rc | Notes |
-|-----------|-------|-------------|-------|
-| Happy path — present | `com.vendor.daemon` | 0 | Disabled, bootout, plist removed |
-| Happy path — tolerant missing | `com.missing.daemon` `--tolerant-missing` | 0 | Not found, rc 0 due to tolerance |
-| Bad input — missing label | (no args) | 2 | No label provided |
-| Bad input — too many args | `label1 label2` | 2 | Multiple labels |
-| Bad input — unknown flag | `label` `--invalid` | 2 | Unknown flag rejected |
-| Bad input — invalid label | `badlabel` | 2 | Reverse-DNS with ≥3 labels required |
-| Not present — strict | `com.missing.daemon` | 4 | No plist found |
-| Operation failed — bootout | `label` (mocked bootout failure) | 5 | Bootout failed, verify shows running |
-| Operation failed — delete | `label` (mocked SafeDelete failure) | 5 | Plist delete failed |
-| Needs root | `label` (non-root) | 3 | Daemons always require root |
+### Tolerant missing (rc 0)
+- [ ] Symlink does not exist, `--tolerant-missing` → rc 0
 
-#### Mocking Strategy
+### Strict missing (rc 4)
+- [ ] Symlink does not exist, no tolerance → rc 4
 
-- Mock `/bin/launchctl disable`, `bootout` to succeed/fail
-- Mock `SafeDelete` to succeed/fail
-- Mock `VerifyServiceUnloaded` to simulate verification
+### Happy path (rc 0)
+- [ ] Symlink unlinked → rc 0
+
+### Not a symlink
+- [ ] Path exists but is not a symlink → rc 2 or rc 5 (per function contract)
 
 ---
 
-### 8. RemoveFinderExtension
+## ListGraphicalUsers — `spec/list_graphical_users_spec.sh`
 
-**Purpose:** Disable and unregister a Finder Sync extension via `pluginkit`.
+### Happy path
+- [ ] Returns at least one username on a macOS system with graphical users
+- [ ] Does NOT return `root`
+- [ ] Does NOT return system accounts (UID < 500)
 
-#### Test Scenarios
-
-| Test Case | Input | Expected rc | Notes |
-|-----------|-------|-------------|-------|
-| Happy path — registered | `com.vendor.finder` | 0 | Disabled, removed, verify shows absent |
-| Happy path — tolerant missing | `com.missing.finder` `--tolerant-missing` | 0 | Not registered, rc 0 due to tolerance |
-| Bad input — missing bundle_id | (no args) | 2 | No bundle_id provided |
-| Bad input — too many args | `id1 id2` | 2 | Multiple bundle_ids |
-| Bad input — unknown flag | `id` `--invalid` | 2 | Unknown flag rejected |
-| Bad input — invalid format | `badid` | 2 | Reverse-DNS with ≥3 labels required |
-| Bad input — duplicate flag | `id` `--tolerant-missing` `--tolerant-missing` | 2 | Duplicate flag detected |
-| Not present — strict | `com.missing.finder` | 4 | Not registered, no tolerance |
-| Operation failed — verify | `id` (mocked to persist) | 5 | Remove attempted but verify shows registered |
-
-#### Mocking Strategy
-
-- Mock `/usr/bin/pluginkit -m -i` to simulate registered/not registered
-- Mock `/usr/bin/pluginkit -e ignore` to succeed
-- Mock `/usr/bin/pluginkit -r` to succeed
-- Mock verify step to show persistence for rc 5
+### Tool presence (rc 1)
+- [ ] dscl not found → rc 1
 
 ---
 
-### 9. RemoveQuickLookPlugin
+## RemovePathForUsers — `spec/remove_path_for_users_spec.sh`
 
-**Purpose:** Remove a QuickLook generator plugin from disk.
+### Bad input (rc 2)
+- [ ] No arguments → rc 2
+- [ ] Unknown flag → rc 2
+- [ ] Absolute path (leading `/`) → rc 2 (paths must be relative)
 
-#### Test Scenarios
+### Tolerant missing (rc 0)
+- [ ] Relative path does not exist under any user, `--tolerant-missing` → rc 0
 
-| Test Case | Input | Expected rc | Notes |
-|-----------|-------|-------------|-------|
-| Happy path — present | `/Library/QuickLook/plugin.qlgenerator` | 0 | Plugin removed, verify shows absent |
-| Happy path — tolerant missing | `/nonexistent.qlgenerator` `--tolerant-missing` | 0 | Not present, rc 0 due to tolerance |
-| Bad input — missing path | (no args) | 2 | No path provided |
-| Bad input — too many args | `path1 path2` | 2 | Multiple paths |
-| Bad input — unknown flag | `path` `--invalid` | 2 | Unknown flag rejected |
-| Bad input — not absolute | `relative/path.qlgenerator` | 2 | Must be absolute path |
-| Bad input — not .qlgenerator | `/path/to/plugin.app` | 2 | Must end with .qlgenerator |
-| Not present — strict | `/nonexistent.qlgenerator` | 4 | Not present, no tolerance |
-| Operation failed — verify | `path` (mocked to persist) | 5 | Remove attempted but verify shows present |
-
-#### Mocking Strategy
-
-- Mock `SafeRemovePath` to succeed/fail
-- Mock file existence checks for verify-after
+### Happy path (rc 0)
+- [ ] Path removed from all graphical user homes → rc 0
 
 ---
 
-### 10. RemovePrivilegedHelper
+## VerifyServiceUnloaded — `spec/verify_service_unloaded_spec.sh`
 
-**Purpose:** Remove a PrivilegedHelperTool binary from `/Library/PrivilegedHelperTools/`.
+### Bad input (rc 2)
+- [ ] No arguments → rc 2
+- [ ] More than one argument → rc 2
 
-#### Test Scenarios
+### Unloaded (rc 0)
+- [ ] Mock launchctl print returns "Could not find service" in stderr → rc 0
+- [ ] Mock launchctl print returns "state = not running" in stdout → rc 0
 
-| Test Case | Input | Expected rc | Notes |
-|-----------|-------|-------------|-------|
-| Happy path — present | `/Library/PrivilegedHelperTools/com.vendor.helper` | 0 | Helper removed, verify shows absent |
-| Happy path — tolerant missing | `/Library/PrivilegedHelperTools/com.missing.helper` `--tolerant-missing` | 0 | Not present, rc 0 due to tolerance |
-| Bad input — missing path | (no args) | 2 | No path provided |
-| Bad input — too many args | `path1 path2` | 2 | Multiple paths |
-| Bad input — unknown flag | `path` `--invalid` | 2 | Unknown flag rejected |
-| Bad input — not absolute | `relative/helper` | 2 | Must be absolute path |
-| Bad input — not under dir | `/Library/Other/helper` | 2 | Must be under /Library/PrivilegedHelperTools/ |
-| Bad input — invalid filename | `/Library/PrivilegedHelperTools/badname` | 2 | Filename must be reverse-DNS ≥3 labels |
-| Not present — strict | `/Library/PrivilegedHelperTools/com.missing.helper` | 4 | Not present, no tolerance |
-| Operation failed — verify | `path` (mocked to persist) | 5 | Remove attempted but verify shows present |
+### Still running (rc 1)
+- [ ] Mock launchctl print returns "state = running" in stdout → rc 1
 
-#### Mocking Strategy
-
-- Mock `SafeDelete` to succeed/fail
-- Mock file existence checks for verify-after
+### Ambiguous (rc 3)
+- [ ] Mock launchctl print returns neither canonical state → rc 3
 
 ---
 
-### 11. IdentifyLoginItemType
+## DisableLaunchAgent — `spec/disable_launch_agent_spec.sh`
 
-**Purpose:** Detect the persistence mechanism underlying a login/background item.
+### Bad input (rc 2)
+- [ ] No arguments → rc 2, output includes "Bad input"
+- [ ] Invalid label format (not reverse-DNS) → rc 2, output includes "Invalid label"
+- [ ] Duplicate `--tolerant-missing` → rc 2, output includes "duplicate"
+- [ ] Unknown flag → rc 2, output includes "unknown flag"
+- [ ] Multiple non-flag arguments → rc 2, output includes "multiple non-flag"
 
-#### Test Scenarios
+### Tolerant missing (rc 0)
+- [ ] Agent not found in any user domain, `--tolerant-missing` → rc 0
 
-| Test Case | Input | Expected rc | Notes |
-|-----------|-------|-------------|-------|
-| Happy path — daemon | `com.vendor.daemon` (in BTM as legacy daemon) | 0 | Outputs `TYPE=daemon PATH=...` |
-| Happy path — agent | `com.vendor.agent` (in BTM as legacy agent) | 0 | Outputs `TYPE=agent PATH=...` |
-| Happy path — login_item | `com.vendor.login` (in BTM as login item) | 0 | Outputs `TYPE=login_item PATH=...` |
-| Happy path — app | `com.vendor.app` (in BTM as app) | 0 | Outputs `TYPE=app PATH=...` |
-| Happy path — tolerant missing | `com.missing.item` `--tolerant-missing` | 0 | Not found, rc 0 due to tolerance |
-| Bad input — missing identifier | (no args) | 2 | No identifier provided |
-| Bad input — too many args | `id1 id2` | 2 | Multiple identifiers |
-| Bad input — unknown flag | `id` `--invalid` | 2 | Unknown flag rejected |
-| Bad input — invalid format | `badid` | 2 | Reverse-DNS with ≥2 labels required |
-| Bad input — duplicate flag | `id` `--tolerant-missing` `--tolerant-missing` | 2 | Duplicate flag detected |
-| Not present — strict | `com.missing.item` | 4 | Not in BTM, no tolerance |
-| Operation failed — parse error | `id` (malformed BTM output) | 1 | Parser cannot interpret output |
-| Needs root | `id` (non-root) | 3 | sfltool dumpbtm requires root |
+### Strict missing (rc 4)
+- [ ] Agent not found in any user domain, no tolerance → rc 4
 
-#### Mocking Strategy
+### Happy path (rc 0)
+- [ ] Mock: agent found, disable succeeds, print-disabled shows "true" → rc 0
 
-- Mock `/usr/bin/sfltool dumpbtm` to return various BTM entries
-- Simulate malformed output for parse error
-- Simulate empty URL for orphaned entries
+### Verify-after failure (rc 5)
+- [ ] Mock: disable called but print-disabled does NOT show "true" → rc 5
+
+### Order-agnostic args
+- [ ] Flags before label → same result as flags after label
+- [ ] Flags after label → rc 0 (with tolerant + absent)
 
 ---
 
-### 12. RemoveLoginItems
+## DisableLaunchDaemon — `spec/disable_launch_daemon_spec.sh`
 
-**Purpose:** Remove login/background items by auto-routing to correct removal function.
+### Bad input (rc 2)
+- [ ] No arguments → rc 2
+- [ ] Invalid label → rc 2
+- [ ] Duplicate flags → rc 2
+- [ ] Unknown flag → rc 2
 
-#### Test Scenarios
+### Root check (rc 3)
+- [ ] FAKE_EUID=1000 → rc 3 (daemons always require root)
 
-| Test Case | Input | Expected rc | Notes |
-|-----------|-------|-------------|-------|
-| Happy path — daemon route | `com.vendor.daemon` (TYPE=daemon) | 0 | Routes to UnloadAndRemoveLaunchDaemon |
-| Happy path — agent route | `com.vendor.agent` (TYPE=agent) | 0 | Routes to UnloadAndRemoveLaunchAgent |
-| Happy path — helper route | `com.vendor.helper` (TYPE=helper) | 0 | Routes to RemovePrivilegedHelper |
-| Happy path — app route | `com.vendor.app` (TYPE=app, has URL) | 0 | Routes to SafeRemovePath |
-| Happy path — tolerant missing | `com.missing.item` `--tolerant-missing` | 0 | Not found, rc 0 due to tolerance |
-| Bad input — missing identifier | (no args) | 2 | No identifier provided |
-| Bad input — too many args | `id1 id2` | 2 | Multiple identifiers |
-| Bad input — unknown flag | `id` `--invalid` | 2 | Unknown flag rejected |
-| Bad input — invalid format | `badid` | 2 | Reverse-DNS with ≥2 labels required |
-| Not present — strict | `com.missing.item` | 4 | Not in BTM, no tolerance |
-| Operation failed — unknown type | `id` (TYPE=unknown) | 5 | Unknown type, cannot route |
-| Operation failed — no path | `id` (TYPE=app, empty URL) | 5 | Cannot remove without path |
-| Operation failed — route failure | `id` (route to failing remover) | 5 | Underlying remover failed |
+### Tolerant missing (rc 0)
+- [ ] Daemon not found in system domain, `--tolerant-missing` → rc 0
 
-#### Mocking Strategy
+### Strict missing (rc 4)
+- [ ] Daemon not found, no tolerance → rc 4
 
-- Mock `IdentifyLoginItemType` to return various TYPE outputs
-- Mock underlying removal functions to succeed/fail
-- Simulate empty URL path for app/login_item types
+### Happy path (rc 0)
+- [ ] Mock: daemon found, disable succeeds, verified disabled → rc 0
+
+### Order-agnostic args
+- [ ] Flags before label → works
+- [ ] Flags after label → works
 
 ---
 
-### 13. ParseInput
+## UnloadAndRemoveLaunchAgent — `spec/unload_and_remove_launch_agent_spec.sh`
 
-**Purpose:** Route input source and populate config arrays.
+### Bad input (rc 2)
+- [ ] No arguments → rc 2
+- [ ] Invalid label → rc 2
+- [ ] Unknown flag → rc 2
 
-#### Test Scenarios
+### Tolerant missing (rc 0)
+- [ ] No plists found, `--tolerant-missing` → rc 0
 
-| Test Case | Input | Expected rc | Notes |
-|-----------|-------|-------------|-------|
-| Happy path — manifest mode | `--manifest=/path/to/manifest.json` | 0 | Arrays populated from manifest |
-| Happy path — CLI flags | `--app-name=Test --paths=/path1` | 0 | Arrays populated from flags |
-| Happy path — Jamf mode | `mnt host user jamf=true AppName|path|pkg` | 0 | Arrays populated from Jamf params |
-| Happy path — fallback | (no flags, no Jamf) | 0 | Hardcoded arrays preserved |
-| Bad input — manifest missing | `--manifest=/nonexistent.json` | 2 | Manifest file does not exist |
-| Bad input — manifest not file | `--manifest=/a/directory` | 2 | Path is directory, not file |
+### Strict missing (rc 4)
+- [ ] No plists found, no tolerance → rc 4
 
-#### Mocking Strategy
+### Happy path (rc 0)
+- [ ] Mock: plist exists, disable + bootout succeed, VerifyServiceUnloaded returns 0, SafeDelete succeeds, file gone → rc 0
 
-- Mock `ParseManifestJSON` to succeed/fail
-- Test each input source priority order
-- Verify no merging across sources
+### Verify-after failure (rc 5)
+- [ ] VerifyServiceUnloaded returns 1 (still running) → rc 5
+- [ ] SafeDelete succeeds but plist still on disk → rc 5
 
----
-
-### 14. ParseManifestJSON
-
-**Purpose:** Parse a JSON manifest file using plutil.
-
-#### Test Scenarios
-
-| Test Case | Input | Expected rc | Notes |
-|-----------|-------|-------------|-------|
-| Happy path — valid JSON | `/path/to/valid.json` | 0 | Arrays populated |
-| Happy path — empty arrays | `/path/to/empty.json` | 0 | Arrays remain empty |
-| Bad input — missing arg | (no args) | 2 | No manifest path provided |
-| Bad input — too many args | `path1 path2` | 2 | Multiple paths |
-| Bad input — file not found | `/nonexistent.json` | 2 | File does not exist |
-| Operation failed — invalid JSON | `/path/to/invalid.json` | 1 | plutil parse fails |
-| Operation failed — plutil missing | (mocked) | 1 | /usr/bin/plutil not found |
-
-#### Mocking Strategy
-
-- Mock `/usr/bin/plutil` to succeed/fail
-- Create test JSON files with various structures
-- Simulate plutil parse errors
+### Order-agnostic args
+- [ ] `--tolerant-missing` before label → works
+- [ ] `--tolerant-missing` after label → works
 
 ---
 
-## Test File Naming Convention
+## UnloadAndRemoveLaunchDaemon — `spec/unload_and_remove_launch_daemon_spec.sh`
 
-Spec files should follow the naming convention:
-```
-spec/<function_name_snake_case>_spec.sh
-```
+### Bad input (rc 2)
+- [ ] No arguments → rc 2
+- [ ] Invalid label → rc 2
+- [ ] Unknown flag → rc 2
 
-Examples:
-- `spec/forget_package_spec.sh`
-- `spec/remove_finder_extension_spec.sh`
-- `spec/identify_login_item_type_spec.sh`
+### Root check (rc 3)
+- [ ] FAKE_EUID=1000 → rc 3
+
+### Tolerant missing (rc 0)
+- [ ] Plist not found, `--tolerant-missing` → rc 0
+
+### Strict missing (rc 4)
+- [ ] Plist not found, no tolerance → rc 4
+
+### Happy path (rc 0)
+- [ ] Mock: plist exists, disable + bootout succeed, verified unloaded, SafeDelete succeeds → rc 0
+
+### Verify-after failure (rc 5)
+- [ ] Still running after bootout → rc 5
+- [ ] Plist still on disk after delete → rc 5
 
 ---
 
-## Running Tests
+## RemoveFinderExtension — `spec/remove_finder_extension_spec.sh`
 
-```bash
-# Run all tests
-shellspec
+### Bad input (rc 2)
+- [ ] No arguments → rc 2, output includes "Bad input"
+- [ ] Unknown flag → rc 2, output includes "unknown flag"
+- [ ] Duplicate `--tolerant-missing` → rc 2, output includes "duplicate"
+- [ ] Duplicate `--needs-root` → rc 2, output includes "duplicate"
+- [ ] Multiple non-flag arguments → rc 2
+- [ ] Invalid bundle ID (2 labels) → rc 2, output includes "Invalid bundle ID"
+- [ ] Invalid bundle ID (1 label) → rc 2
+- [ ] Bundle ID starts with number → rc 2
 
-# Run specific test file
-shellspec spec/remove_finder_extension_spec.sh
+### Root check (rc 3)
+- [ ] FAKE_EUID=1000, `--needs-root` → rc 3
 
-# Run with verbose output
-shellspec --format documentation
+### Tolerant missing (rc 0)
+- [ ] Mock pluginkit -m returns empty, `--tolerant-missing` → rc 0
+
+### Strict missing (rc 4)
+- [ ] Mock pluginkit -m returns empty, no tolerance → rc 4, output includes "not registered"
+
+### Happy path (rc 0)
+- [ ] Mock: pluginkit -m returns info, -e ignore succeeds, -r succeeds, verify -m returns empty → rc 0
+
+### Verify-after failure (rc 5)
+- [ ] Mock: removal attempted but pluginkit -m still returns info → rc 5, output includes "still registered"
+
+### Tool presence (rc 1)
+- [ ] pluginkit not found → rc 1
+
+---
+
+## RemoveQuickLookPlugin — `spec/remove_quicklook_plugin_spec.sh`
+
+### Bad input (rc 2)
+- [ ] No arguments → rc 2
+- [ ] Unknown flag → rc 2
+- [ ] Path not absolute → rc 2, output includes "absolute"
+- [ ] Path does not end in `.qlgenerator` → rc 2, output includes "Invalid"
+- [ ] Path outside recognized QuickLook directories → rc 2
+
+### Tolerant missing (rc 0)
+- [ ] Path does not exist, `--tolerant-missing` → rc 0
+
+### Strict missing (rc 4)
+- [ ] Path does not exist, no tolerance → rc 4
+
+### Happy path (rc 0)
+- [ ] Mock: path exists, SafeRemovePath succeeds, verify path gone → rc 0
+
+### Verify-after failure (rc 5)
+- [ ] SafeRemovePath called but path still exists → rc 5
+
+---
+
+## RemovePrivilegedHelper — `spec/remove_privileged_helper_spec.sh`
+
+### Bad input (rc 2)
+- [ ] No arguments → rc 2
+- [ ] Unknown flag → rc 2
+- [ ] Path not absolute → rc 2, output includes "absolute"
+- [ ] Path not under `/Library/PrivilegedHelperTools/` → rc 2, output includes "PrivilegedHelperTools"
+
+### Root check (rc 3)
+- [ ] FAKE_EUID=1000 → rc 3 (helpers always require root)
+
+### Tolerant missing (rc 0)
+- [ ] Helper not present, `--tolerant-missing` → rc 0
+
+### Strict missing (rc 4)
+- [ ] Helper not present, no tolerance → rc 4
+
+### Happy path (rc 0)
+- [ ] Mock: file exists, SafeDelete succeeds, verify file gone → rc 0
+
+### Verify-after failure (rc 5)
+- [ ] SafeDelete called but file still present → rc 5
+
+---
+
+## IdentifyLoginItemType — `spec/identify_login_item_type_spec.sh`
+
+### Bad input (rc 2)
+- [ ] No arguments → rc 2, output includes "Bad input"
+- [ ] Invalid identifier format → rc 2, output includes "Invalid"
+- [ ] Unknown flag → rc 2, output includes "unknown flag"
+- [ ] Multiple non-flag arguments → rc 2
+
+### Root check (rc 3)
+- [ ] FAKE_EUID=1000 → rc 3
+
+### Tolerant missing (rc 0)
+- [ ] Mock sfltool output has no matching identifier, `--tolerant-missing` → rc 0
+
+### Strict missing (rc 4)
+- [ ] Mock sfltool output has no matching identifier, no tolerance → rc 4
+
+### Type classification (rc 0 with correct TYPE= output)
+- [ ] Mock BTM entry with "legacy daemon" type → output includes "TYPE=daemon"
+- [ ] Mock BTM entry with "legacy agent" type → output includes "TYPE=agent"
+- [ ] Mock BTM entry with "login item" type → output includes "TYPE=login_item"
+- [ ] Mock BTM entry with "app" type → output includes "TYPE=app"
+- [ ] Mock BTM entry with unrecognized type → output includes "TYPE=unknown"
+
+### Output format
+- [ ] Output contains `PATH=` with the filesystem path from URL field
+- [ ] Output contains `DISPOSITION=` with the disposition flags
+- [ ] Empty URL field → `PATH=` is empty (not crash)
+
+### Tool presence (rc 1)
+- [ ] sfltool not found → rc 1
+
+---
+
+## RemoveLoginItems — `spec/remove_login_items_spec.sh`
+
+### Bad input (rc 2)
+- [ ] No arguments → rc 2
+- [ ] Unknown flag → rc 2
+- [ ] Invalid identifier format → rc 2
+
+### Tolerant missing (rc 0)
+- [ ] Identifier not in BTM, `--tolerant-missing` → rc 0
+
+### Strict missing (rc 4)
+- [ ] Identifier not in BTM, no tolerance → rc 4
+
+### Auto-routing (rc 0)
+- [ ] TYPE=daemon → calls UnloadAndRemoveLaunchDaemon, rc 0
+- [ ] TYPE=agent → calls UnloadAndRemoveLaunchAgent, rc 0
+- [ ] TYPE=helper → calls RemovePrivilegedHelper, rc 0
+- [ ] TYPE=app → calls SafeRemovePath, rc 0
+
+### Routing failures (rc 5)
+- [ ] TYPE=unknown → rc 5, output includes warning about unknown type
+- [ ] TYPE=app but PATH is empty → rc 5
+- [ ] Underlying removal function fails → rc 5
+
+### Order-agnostic args
+- [ ] Flags before identifier → works
+- [ ] Flags after identifier → works
+
+---
+
+## ParseInput — `spec/parse_input_spec.sh`
+
+### Fallback mode (no arguments)
+- [ ] No arguments → rc 0, hardcoded arrays survive unchanged
+
+### Jamf mode detection
+- [ ] `$4 == "jamf=true"` → enters Jamf mode, parses $5-$11
+- [ ] `$4 == "JAMF=TRUE"` → does NOT enter Jamf mode (case sensitive)
+- [ ] `$4 == ""` → does NOT enter Jamf mode
+
+### Jamf parameter parsing
+- [ ] `$5` sets APP_NAME
+- [ ] `$6` pipe-delimited → PATHS_TO_REMOVE array
+- [ ] `$7` pipe-delimited → PKGS_TO_REMOVE array
+- [ ] Empty Jamf slot → array not modified
+
+### CLI flag parsing
+- [ ] `--app-name="Test"` → sets APP_NAME
+- [ ] `--paths="a|b"` → PATHS_TO_REMOVE = ["a", "b"]
+- [ ] `--packages="x|y"` → PKGS_TO_REMOVE = ["x", "y"]
+- [ ] `--agents="a.b.c"` → LAUNCH_AGENTS_TO_REMOVE = ["a.b.c"]
+- [ ] `--daemons="a.b.c"` → LAUNCH_DAEMONS_TO_REMOVE = ["a.b.c"]
+- [ ] `--finder-exts="a.b.c"` → FINDER_EXTENSIONS_TO_REMOVE = ["a.b.c"]
+- [ ] `--quit="/path"` → APPS_TO_QUIT = ["/path"]
+- [ ] `--profile-paths="rel/path"` → PROFILE_REL_PATHS_TO_REMOVE
+- [ ] `--ql-plugins="/path.qlgenerator"` → QUICKLOOK_PLUGINS_TO_REMOVE
+- [ ] `--helpers="/Library/PrivilegedHelperTools/x"` → PRIVILEGED_HELPERS_TO_REMOVE
+- [ ] `--login-items="a.b.c"` → LOGIN_ITEMS_TO_REMOVE
+- [ ] Multiple flags in one invocation → all arrays set
+
+### Manifest mode
+- [ ] `--manifest` with no path → rc 2
+- [ ] `--manifest=/nonexistent` → rc 2
+- [ ] `--manifest=/valid.json` → rc 0, arrays populated via ParseManifestJSON
+
+### Priority chain
+- [ ] CLI flags override Jamf params when both present
+- [ ] Manifest overrides CLI flags when both present
+
+---
+
+## ParseManifestJSON — `spec/parse_manifest_json_spec.sh`
+
+### Bad input (rc 2)
+- [ ] No arguments → rc 2
+- [ ] File does not exist → rc 2
+
+### Happy path (rc 0)
+- [ ] Valid JSON with all keys → rc 0, arrays populated
+- [ ] Valid JSON with empty arrays → rc 0, arrays remain empty
+
+### Parse failure (rc 1)
+- [ ] Invalid JSON → rc 1
+- [ ] plutil not found → rc 1
