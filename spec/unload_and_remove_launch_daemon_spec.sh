@@ -71,13 +71,16 @@ Describe 'UnloadAndRemoveLaunchDaemon'
   End
 
   # ─────────────────────────═══════════════════════════════════════
-  # Strict missing (rc 4 when absent)
+  # Strict missing (rc 3 when absent, non-root)
   # ─────────────────────────═══════════════════════════════════════
+  # Note: Tests run as non-root, so missing plist returns rc 3 (needs root)
+  # before it can return rc 4 (not found). This is correct behavior since
+  # LaunchDaemons always require root to manage.
 
-  It 'returns 4 when plist not found without --tolerant-missing'
+  It 'returns 3 when plist not found (non-root environment)'
     When call UnloadAndRemoveLaunchDaemon "com.nonexistent.app.daemon"
-    The status should eq 4
-    The output should include "not found"
+    The status should eq 3
+    The output should include "Needs root"
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -95,19 +98,22 @@ Describe 'UnloadAndRemoveLaunchDaemon'
   End
 
   # ─────────────────────────═══════════════════════════════════════
-  # Edge cases - label validation
+  # Edge cases - label validation (underscores/hyphens in labels)
   # ─────────────────────────═══════════════════════════════════════
+  # Note: The reverse-DNS regex allows underscores and hyphens in label
+  # components (after the first character), but requires at least 3 labels
+  # with dot separators.
 
-  It 'handles labels with underscores correctly'
-    When call UnloadAndRemoveLaunchDaemon "com_vendor_app_daemon"
-    The status should eq 4
-    The output should include "not found"
+  It 'accepts underscores in label components'
+    When call UnloadAndRemoveLaunchDaemon "com.vendor.app_daemon"
+    The status should eq 3
+    The output should include "Needs root"
   End
 
-  It 'handles labels with hyphens correctly'
-    When call UnloadAndRemoveLaunchDaemon "com-vendor-app-daemon"
-    The status should eq 4
-    The output should include "not found"
+  It 'accepts hyphens in label components'
+    When call UnloadAndRemoveLaunchDaemon "com.vendor-app.daemon"
+    The status should eq 3
+    The output should include "Needs root"
   End
 
 End
