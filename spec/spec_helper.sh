@@ -15,12 +15,12 @@
 #   export MOCK_SFLTOOL_MODE="daemon"    # Simulate daemon-type login item
 #
 # To test root scenarios, set:
-#   export EUID=0
-#   export UID=0
+#   export FAKE_EUID=0
+#   export FAKE_UID=0
 #
 # To test non-root scenarios:
-#   export EUID=1000
-#   export UID=1000
+#   export FAKE_EUID=1000
+#   export FAKE_UID=1000
 #
 # To test missing tools:
 #   export MOCK_PGREP_MODE="missing"     # Simulate missing pgrep binary
@@ -57,9 +57,9 @@ export MOCK_QLMANAGE_MODE="${MOCK_QLMANAGE_MODE:-normal}"
 export MOCK_PKGUTIL_MODE="${MOCK_PKGUTIL_MODE:-normal}"
 
 # Set default EUID for testing (non-root by default)
-# Can be overridden by setting EUID=0 before running tests
-export EUID="${EUID:-1000}"
-export UID="${UID:-1000}"
+# Use FAKE_EUID/FAKE_UID instead of EUID/UID since they are readonly
+export FAKE_EUID="${FAKE_EUID:-1000}"
+export FAKE_UID="${FAKE_UID:-1000}"
 
 # Extract only the function definitions from the uninstaller script
 # The script structure is:

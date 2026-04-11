@@ -34,7 +34,13 @@ Describe 'SafeRemovePath'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 3 when not root and --needs-root is specified'
-    Skip "Requires non-root execution context to test the root guard"
+    export EUID=1000
+    export UID=1000
+    When call SafeRemovePath "/tmp/testpath" --needs-root
+    The status should eq 3
+    The output should include "Must be run as root"
+    export EUID=0
+    export UID=0
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -57,11 +63,26 @@ Describe 'SafeRemovePath'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 0 when successfully removes a symlink'
-    Skip "Requires creating test symlink and mocking UnlinkSymlink"
+    local test_target="/tmp/safe_rm_target_$$"
+    local test_symlink="/tmp/safe_rm_symlink_$$"
+    touch "$test_target"
+    ln -s "$test_target" "$test_symlink"
+    When call SafeRemovePath "$test_symlink"
+    The status should eq 0
+    [[ ! -e "$test_symlink" ]]
+    rm -f "$test_target"
   End
 
   It 'returns 5 when symlink removal fails'
-    Skip "Requires mocking UnlinkSymlink failure"
+    local test_target="/tmp/safe_rm_fail_target_$$"
+    local test_symlink="/tmp/safe_rm_fail_symlink_$$"
+    touch "$test_target"
+    ln -s "$test_target" "$test_symlink"
+    # Mock UnlinkSymlink to fail
+    UnlinkSymlink() { return 5; }
+    When call SafeRemovePath "$test_symlink"
+    The status should eq 5
+    rm -f "$test_target" "$test_symlink"
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -69,15 +90,32 @@ Describe 'SafeRemovePath'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 0 when successfully removes an empty directory'
-    Skip "Requires creating test directory and mocking RemoveDir"
+    local test_dir="/tmp/safe_rm_dir_$$"
+    mkdir -p "$test_dir"
+    When call SafeRemovePath "$test_dir"
+    The status should eq 0
+    [[ ! -d "$test_dir" ]]
+    rm -rf "$test_dir"
   End
 
   It 'returns 0 when successfully removes a directory tree (bottom-up)'
-    Skip "Requires creating nested test directories"
+    local test_dir="/tmp/safe_rm_tree_$$"
+    mkdir -p "$test_dir/subdir1/subdir2"
+    touch "$test_dir/file1" "$test_dir/subdir1/file2"
+    When call SafeRemovePath "$test_dir"
+    The status should eq 0
+    [[ ! -d "$test_dir" ]]
+    rm -rf "$test_dir"
   End
 
   It 'returns 5 when directory removal fails'
-    Skip "Requires mocking RemoveDir failure"
+    local test_dir="/tmp/safe_rm_dir_fail_$$"
+    mkdir -p "$test_dir"
+    # Mock RemoveDir to fail
+    RemoveDir() { return 5; }
+    When call SafeRemovePath "$test_dir"
+    The status should eq 5
+    rm -rf "$test_dir"
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -85,11 +123,22 @@ Describe 'SafeRemovePath'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 0 when successfully removes a single file'
-    Skip "Requires creating test file and mocking SafeDelete"
+    local test_file="/tmp/safe_rm_file_$$"
+    touch "$test_file"
+    When call SafeRemovePath "$test_file"
+    The status should eq 0
+    [[ ! -f "$test_file" ]]
+    rm -f "$test_file"
   End
 
   It 'returns 5 when file removal fails'
-    Skip "Requires mocking SafeDelete failure"
+    local test_file="/tmp/safe_rm_file_fail_$$"
+    touch "$test_file"
+    # Mock SafeDelete to fail
+    SafeDelete() { return 5; }
+    When call SafeRemovePath "$test_file"
+    The status should eq 5
+    rm -f "$test_file"
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -97,11 +146,24 @@ Describe 'SafeRemovePath'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 5 when path still exists after removal attempt'
-    Skip "Requires mocking removal to succeed but path persists"
+    local test_file="/tmp/safe_rm_verify_$$"
+    touch "$test_file"
+    # Mock SafeDelete to succeed but file persists
+    SafeDelete() { return 0; }
+    When call SafeRemovePath "$test_file"
+    The status should eq 5
+    rm -f "$test_file"
   End
 
   It 'returns 5 when one or more delete steps fail in directory tree'
-    Skip "Requires mocking partial failure in tree removal"
+    local test_dir="/tmp/safe_rm_tree_fail_$$"
+    mkdir -p "$test_dir/subdir1"
+    touch "$test_dir/file1" "$test_dir/subdir1/file2"
+    # Mock SafeDelete to fail
+    SafeDelete() { return 5; }
+    When call SafeRemovePath "$test_dir"
+    The status should eq 5
+    rm -rf "$test_dir"
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -109,11 +171,33 @@ Describe 'SafeRemovePath'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 1 when find is not found'
-    Skip "Requires mocking missing find binary"
+    local test_dir="/tmp/safe_rm_find_test_$$"
+    mkdir -p "$test_dir"
+    local old_path="$PATH"
+    export PATH="/nonexistent:$PATH"
+    (
+      export PATH="/nonexistent:$PATH"
+      When call SafeRemovePath "$test_dir"
+      The status should eq 1
+      The output should include "find not found"
+    )
+    rm -rf "$test_dir"
+    export PATH="$old_path"
   End
 
   It 'returns 1 when realpath is not found'
-    Skip "Requires mocking missing realpath binary"
+    local test_file="/tmp/safe_rm_realpath_test_$$"
+    touch "$test_file"
+    local old_path="$PATH"
+    export PATH="/nonexistent:$PATH"
+    (
+      export PATH="/nonexistent:$PATH"
+      When call SafeRemovePath "$test_file"
+      The status should eq 1
+      The output should include "realpath not found"
+    )
+    rm -f "$test_file"
+    export PATH="$old_path"
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -135,15 +219,29 @@ Describe 'SafeRemovePath'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'handles broken symlinks correctly'
-    Skip "Requires creating broken symlink test case"
+    local test_symlink="/tmp/safe_rm_broken_$$"
+    ln -s "/nonexistent/target" "$test_symlink"
+    When call SafeRemovePath "$test_symlink"
+    The status should eq 0
+    rm -f "$test_symlink"
   End
 
   It 'handles paths with spaces correctly'
-    Skip "Requires creating test path with spaces"
+    local test_dir="/tmp/safe rm with spaces_$$"
+    mkdir -p "$test_dir"
+    When call SafeRemovePath "$test_dir"
+    The status should eq 0
+    [[ ! -d "$test_dir" ]]
+    rm -rf "$test_dir"
   End
 
   It 'handles paths with special characters correctly'
-    Skip "Requires creating test path with special characters"
+    local test_dir="/tmp/safe_rm_test_@#\$%^_$$"
+    mkdir -p "$test_dir"
+    When call SafeRemovePath "$test_dir"
+    The status should eq 0
+    [[ ! -d "$test_dir" ]]
+    rm -rf "$test_dir"
   End
 
 End

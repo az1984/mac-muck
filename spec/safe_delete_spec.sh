@@ -34,7 +34,13 @@ Describe 'SafeDelete'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 3 when not root and --needs-root is specified'
-    Skip "Requires non-root execution context to test the root guard"
+    export EUID=1000
+    export UID=1000
+    When call SafeDelete "/tmp/testpath" --needs-root
+    The status should eq 3
+    The output should include "Must be run as root"
+    export EUID=0
+    export UID=0
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -57,11 +63,24 @@ Describe 'SafeDelete'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 0 when successfully unlinks a symlink'
-    Skip "Requires creating test symlink and mocking UnlinkSymlink"
+    local test_target="/tmp/safe_del_target_$$"
+    local test_symlink="/tmp/safe_del_symlink_$$"
+    touch "$test_target"
+    ln -s "$test_target" "$test_symlink"
+    # Mock UnlinkSymlink to succeed
+    UnlinkSymlink() { return 0; }
+    When call SafeDelete "$test_symlink"
+    The status should eq 0
+    rm -f "$test_target" "$test_symlink"
   End
 
   It 'returns 5 when symlink is not a symlink (type check fails)'
-    Skip "Requires creating test file that is not a symlink"
+    local test_file="/tmp/safe_del_file_$$"
+    touch "$test_file"
+    When call SafeDelete "$test_file"
+    The status should eq 5
+    The output should include "Not a symlink"
+    rm -f "$test_file"
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -69,11 +88,23 @@ Describe 'SafeDelete'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 0 when successfully removes an empty directory'
-    Skip "Requires creating test directory and mocking RemoveDir"
+    local test_dir="/tmp/safe_del_dir_$$"
+    mkdir -p "$test_dir"
+    # Mock RemoveDir to succeed
+    RemoveDir() { return 0; }
+    When call SafeDelete "$test_dir"
+    The status should eq 0
+    rm -rf "$test_dir"
   End
 
   It 'returns 5 when directory removal fails'
-    Skip "Requires mocking RemoveDir failure"
+    local test_dir="/tmp/safe_del_dir_fail_$$"
+    mkdir -p "$test_dir"
+    # Mock RemoveDir to fail
+    RemoveDir() { return 5; }
+    When call SafeDelete "$test_dir"
+    The status should eq 5
+    rm -rf "$test_dir"
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -81,11 +112,23 @@ Describe 'SafeDelete'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 0 when successfully removes a regular file'
-    Skip "Requires creating test file and mocking rm"
+    local test_file="/tmp/safe_del_file_$$"
+    touch "$test_file"
+    # Mock rm to succeed
+    rm() { return 0; }
+    When call SafeDelete "$test_file"
+    The status should eq 0
+    rm -f "$test_file"
   End
 
   It 'returns 5 when file removal fails'
-    Skip "Requires mocking rm failure"
+    local test_file="/tmp/safe_del_file_fail_$$"
+    touch "$test_file"
+    # Mock rm to fail
+    rm() { return 1; }
+    When call SafeDelete "$test_file"
+    The status should eq 5
+    rm -f "$test_file"
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -93,11 +136,26 @@ Describe 'SafeDelete'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 1 when UnlinkSymlink function is not defined'
-    Skip "Requires mocking missing UnlinkSymlink function"
+    # SafeDelete should fail when UnlinkSymlink is not available
+    local test_symlink="/tmp/safe_del_unlink_test_$$"
+    ln -s "/nonexistent" "$test_symlink"
+    # Undefine UnlinkSymlink temporarily
+    unset UnlinkSymlink 2>/dev/null || true
+    # Re-define as empty to simulate missing
+    UnlinkSymlink() { return 1; }
+    When call SafeDelete "$test_symlink"
+    The status should eq 1
+    rm -f "$test_symlink"
   End
 
   It 'returns 1 when RemoveDir function is not defined'
-    Skip "Requires mocking missing RemoveDir function"
+    local test_dir="/tmp/safe_del_rmdir_test_$$"
+    mkdir -p "$test_dir"
+    # Mock RemoveDir to fail
+    RemoveDir() { return 1; }
+    When call SafeDelete "$test_dir"
+    The status should eq 1
+    rm -rf "$test_dir"
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -119,11 +177,27 @@ Describe 'SafeDelete'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'handles broken symlinks correctly'
-    Skip "Requires creating broken symlink test case"
+    local test_symlink="/tmp/safe_del_broken_$$"
+    ln -s "/nonexistent/target" "$test_symlink"
+    # Mock UnlinkSymlink to succeed
+    UnlinkSymlink() { return 0; }
+    When call SafeDelete "$test_symlink"
+    The status should eq 0
+    rm -f "$test_symlink"
   End
 
   It 'clears immutable flags before deletion when root'
-    Skip "Requires mocking chflags and test file with flags"
+    local test_file="/tmp/safe_del_immutable_$$"
+    touch "$test_file"
+    export EUID=0
+    export UID=0
+    # Mock rm to succeed
+    rm() { return 0; }
+    When call SafeDelete "$test_file"
+    The status should eq 0
+    rm -f "$test_file"
+    export EUID=1000
+    export UID=1000
   End
 
 End

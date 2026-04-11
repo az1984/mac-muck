@@ -1,15 +1,44 @@
 . ./spec/spec_helper.sh
 
-# Mock IdentifyLoginItemType to prevent real BTM database queries
+# Mock IdentifyLoginItemType for testing
 IdentifyLoginItemType() {
-  # Return "not found" for most identifiers (rc 4)
-  # This allows testing tolerant-missing and input validation
-  case "$*" in
-    *--tolerant-missing*)
-      # In tolerant mode, return success with "not found"
+  local mode="${MOCK_IDENTIFY_LOGIN_ITEM_MODE:-not_found}"
+  local identifier="$1"
+  
+  case "$mode" in
+    not_found)
+      # Return not found (rc 4)
+      return 4 ;;
+    daemon)
+      echo "TYPE=daemon PATH=/Library/LaunchDaemons/com.test.daemon.plist DISPOSITION=enabled"
       return 0 ;;
+    agent)
+      echo "TYPE=agent PATH=/Library/LaunchAgents/com.test.agent.plist DISPOSITION=enabled"
+      return 0 ;;
+    helper)
+      echo "TYPE=helper PATH=/Library/PrivilegedHelperTools/com.test.helper DISPOSITION=enabled"
+      return 0 ;;
+    app)
+      echo "TYPE=app PATH=/Applications/Test.app DISPOSITION=enabled"
+      return 0 ;;
+    app_no_path)
+      echo "TYPE=app PATH= DISPOSITION=enabled"
+      return 0 ;;
+    login_item)
+      echo "TYPE=login_item PATH=/Applications/LoginItem.app DISPOSITION=enabled"
+      return 0 ;;
+    login_item_no_path)
+      echo "TYPE=login_item PATH= DISPOSITION=enabled"
+      return 0 ;;
+    unknown)
+      echo "TYPE=unknown PATH=/some/path DISPOSITION=enabled"
+      return 0 ;;
+    unrecognized)
+      echo "TYPE=custom_type PATH=/some/path DISPOSITION=enabled"
+      return 0 ;;
+    fail)
+      return 1 ;;
     *)
-      # Default: not found
       return 4 ;;
   esac
 }
@@ -47,7 +76,13 @@ Describe 'RemoveLoginItems'
   It 'returns 2 when identifier format is invalid (only 2 labels)'
     # Note: RemoveLoginItems uses ≥2 labels validation (more permissive than other functions)
     # "com.vendor" passes validation but then fails at IdentifyLoginItemType (rc 4)
-    Skip "Identifier validation uses ≥2 labels, not ≥3 like other functions"
+    export EUID=0
+    export UID=0
+    export MOCK_IDENTIFY_LOGIN_ITEM_MODE="not_found"
+    When call RemoveLoginItems "com.vendor"
+    The status should eq 4
+    export EUID=1000
+    export UID=1000
   End
 
   It 'returns 2 when identifier format is invalid (single label)'
@@ -61,7 +96,13 @@ Describe 'RemoveLoginItems'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 3 when IdentifyLoginItemType requires root'
-    Skip "Requires non-root execution context to test the root guard"
+    export EUID=1000
+    export UID=1000
+    When call RemoveLoginItems "com.test.helper" --needs-root
+    The status should eq 3
+    The output should include "Must be run as root"
+    export EUID=0
+    export UID=0
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -69,11 +110,26 @@ Describe 'RemoveLoginItems'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 4 when identifier not found without --tolerant-missing'
-    Skip "Requires mocking IdentifyLoginItemType to return not found"
+    export EUID=0
+    export UID=0
+    export MOCK_IDENTIFY_LOGIN_ITEM_MODE="not_found"
+    When call RemoveLoginItems "com.nonexistent"
+    The status should eq 4
+    The output should include "not found"
+    unset MOCK_IDENTIFY_LOGIN_ITEM_MODE
+    export EUID=1000
+    export UID=1000
   End
 
   It 'returns 0 when identifier not found with --tolerant-missing'
-    Skip "Requires mocking IdentifyLoginItemType to return not found"
+    export EUID=0
+    export UID=0
+    export MOCK_IDENTIFY_LOGIN_ITEM_MODE="not_found"
+    When call RemoveLoginItems "com.nonexistent" --tolerant-missing
+    The status should eq 0
+    unset MOCK_IDENTIFY_LOGIN_ITEM_MODE
+    export EUID=1000
+    export UID=1000
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -81,11 +137,29 @@ Describe 'RemoveLoginItems'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'routes to UnloadAndRemoveLaunchDaemon when TYPE=daemon'
-    Skip "Requires mocking IdentifyLoginItemType to return daemon type"
+    export EUID=0
+    export UID=0
+    export MOCK_IDENTIFY_LOGIN_ITEM_MODE="daemon"
+    # Mock UnloadAndRemoveLaunchDaemon to succeed
+    UnloadAndRemoveLaunchDaemon() { return 0; }
+    When call RemoveLoginItems "com.test.daemon"
+    The status should eq 0
+    unset MOCK_IDENTIFY_LOGIN_ITEM_MODE
+    export EUID=1000
+    export UID=1000
   End
 
   It 'returns 5 when UnloadAndRemoveLaunchDaemon fails for daemon type'
-    Skip "Requires mocking daemon removal failure"
+    export EUID=0
+    export UID=0
+    export MOCK_IDENTIFY_LOGIN_ITEM_MODE="daemon"
+    # Mock UnloadAndRemoveLaunchDaemon to fail
+    UnloadAndRemoveLaunchDaemon() { return 5; }
+    When call RemoveLoginItems "com.test.daemon"
+    The status should eq 5
+    unset MOCK_IDENTIFY_LOGIN_ITEM_MODE
+    export EUID=1000
+    export UID=1000
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -93,11 +167,29 @@ Describe 'RemoveLoginItems'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'routes to UnloadAndRemoveLaunchAgent when TYPE=agent'
-    Skip "Requires mocking IdentifyLoginItemType to return agent type"
+    export EUID=0
+    export UID=0
+    export MOCK_IDENTIFY_LOGIN_ITEM_MODE="agent"
+    # Mock UnloadAndRemoveLaunchAgent to succeed
+    UnloadAndRemoveLaunchAgent() { return 0; }
+    When call RemoveLoginItems "com.test.agent"
+    The status should eq 0
+    unset MOCK_IDENTIFY_LOGIN_ITEM_MODE
+    export EUID=1000
+    export UID=1000
   End
 
   It 'returns 5 when UnloadAndRemoveLaunchAgent fails for agent type'
-    Skip "Requires mocking agent removal failure"
+    export EUID=0
+    export UID=0
+    export MOCK_IDENTIFY_LOGIN_ITEM_MODE="agent"
+    # Mock UnloadAndRemoveLaunchAgent to fail
+    UnloadAndRemoveLaunchAgent() { return 5; }
+    When call RemoveLoginItems "com.test.agent"
+    The status should eq 5
+    unset MOCK_IDENTIFY_LOGIN_ITEM_MODE
+    export EUID=1000
+    export UID=1000
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -105,11 +197,29 @@ Describe 'RemoveLoginItems'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'routes to RemovePrivilegedHelper when TYPE=helper'
-    Skip "Requires mocking IdentifyLoginItemType to return helper type"
+    export EUID=0
+    export UID=0
+    export MOCK_IDENTIFY_LOGIN_ITEM_MODE="helper"
+    # Mock RemovePrivilegedHelper to succeed
+    RemovePrivilegedHelper() { return 0; }
+    When call RemoveLoginItems "com.test.helper"
+    The status should eq 0
+    unset MOCK_IDENTIFY_LOGIN_ITEM_MODE
+    export EUID=1000
+    export UID=1000
   End
 
   It 'returns 5 when RemovePrivilegedHelper fails for helper type'
-    Skip "Requires mocking helper removal failure"
+    export EUID=0
+    export UID=0
+    export MOCK_IDENTIFY_LOGIN_ITEM_MODE="helper"
+    # Mock RemovePrivilegedHelper to fail
+    RemovePrivilegedHelper() { return 5; }
+    When call RemoveLoginItems "com.test.helper"
+    The status should eq 5
+    unset MOCK_IDENTIFY_LOGIN_ITEM_MODE
+    export EUID=1000
+    export UID=1000
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -117,15 +227,41 @@ Describe 'RemoveLoginItems'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'routes to SafeRemovePath when TYPE=app with path'
-    Skip "Requires mocking IdentifyLoginItemType to return app type with path"
+    export EUID=0
+    export UID=0
+    export MOCK_IDENTIFY_LOGIN_ITEM_MODE="app"
+    # Mock SafeRemovePath to succeed
+    SafeRemovePath() { return 0; }
+    When call RemoveLoginItems "com.test.app"
+    The status should eq 0
+    unset MOCK_IDENTIFY_LOGIN_ITEM_MODE
+    export EUID=1000
+    export UID=1000
   End
 
   It 'returns 5 when TYPE=app has no path available'
-    Skip "Requires mocking IdentifyLoginItemType to return app type with empty path"
+    export EUID=0
+    export UID=0
+    export MOCK_IDENTIFY_LOGIN_ITEM_MODE="app_no_path"
+    When call RemoveLoginItems "com.test.app"
+    The status should eq 5
+    The output should include "no path"
+    unset MOCK_IDENTIFY_LOGIN_ITEM_MODE
+    export EUID=1000
+    export UID=1000
   End
 
   It 'returns 5 when SafeRemovePath fails for app type'
-    Skip "Requires mocking app removal failure"
+    export EUID=0
+    export UID=0
+    export MOCK_IDENTIFY_LOGIN_ITEM_MODE="app"
+    # Mock SafeRemovePath to fail
+    SafeRemovePath() { return 5; }
+    When call RemoveLoginItems "com.test.app"
+    The status should eq 5
+    unset MOCK_IDENTIFY_LOGIN_ITEM_MODE
+    export EUID=1000
+    export UID=1000
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -133,11 +269,28 @@ Describe 'RemoveLoginItems'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'routes to SafeRemovePath when TYPE=login_item with path'
-    Skip "Requires mocking IdentifyLoginItemType to return login_item type with path"
+    export EUID=0
+    export UID=0
+    export MOCK_IDENTIFY_LOGIN_ITEM_MODE="login_item"
+    # Mock SafeRemovePath to succeed
+    SafeRemovePath() { return 0; }
+    When call RemoveLoginItems "com.test.loginitem"
+    The status should eq 0
+    unset MOCK_IDENTIFY_LOGIN_ITEM_MODE
+    export EUID=1000
+    export UID=1000
   End
 
   It 'returns 5 when TYPE=login_item has no path available'
-    Skip "Requires mocking IdentifyLoginItemType to return login_item type with empty path"
+    export EUID=0
+    export UID=0
+    export MOCK_IDENTIFY_LOGIN_ITEM_MODE="login_item_no_path"
+    When call RemoveLoginItems "com.test.loginitem"
+    The status should eq 5
+    The output should include "no path"
+    unset MOCK_IDENTIFY_LOGIN_ITEM_MODE
+    export EUID=1000
+    export UID=1000
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -145,11 +298,27 @@ Describe 'RemoveLoginItems'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 5 when TYPE=unknown'
-    Skip "Requires mocking IdentifyLoginItemType to return unknown type"
+    export EUID=0
+    export UID=0
+    export MOCK_IDENTIFY_LOGIN_ITEM_MODE="unknown"
+    When call RemoveLoginItems "com.test.unknown"
+    The status should eq 5
+    The output should include "Unknown type"
+    unset MOCK_IDENTIFY_LOGIN_ITEM_MODE
+    export EUID=1000
+    export UID=1000
   End
 
   It 'returns 5 when TYPE is unrecognized'
-    Skip "Requires mocking IdentifyLoginItemType to return unrecognized type"
+    export EUID=0
+    export UID=0
+    export MOCK_IDENTIFY_LOGIN_ITEM_MODE="unrecognized"
+    When call RemoveLoginItems "com.test.custom"
+    The status should eq 5
+    The output should include "Unknown type"
+    unset MOCK_IDENTIFY_LOGIN_ITEM_MODE
+    export EUID=1000
+    export UID=1000
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -157,11 +326,26 @@ Describe 'RemoveLoginItems'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 1 when IdentifyLoginItemType function is not defined'
-    Skip "Requires mocking missing IdentifyLoginItemType function"
+    export EUID=0
+    export UID=0
+    # Temporarily remove IdentifyLoginItemType
+    local orig_IdentifyLoginItemType="$IdentifyLoginItemType"
+    unset IdentifyLoginItemType
+    When call RemoveLoginItems "com.test.item"
+    The status should eq 1
+    export EUID=1000
+    export UID=1000
   End
 
   It 'returns 1 when IdentifyLoginItemType fails'
-    Skip "Requires mocking IdentifyLoginItemType failure"
+    export EUID=0
+    export UID=0
+    export MOCK_IDENTIFY_LOGIN_ITEM_MODE="fail"
+    When call RemoveLoginItems "com.test.item"
+    The status should eq 1
+    unset MOCK_IDENTIFY_LOGIN_ITEM_MODE
+    export EUID=1000
+    export UID=1000
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -169,19 +353,53 @@ Describe 'RemoveLoginItems'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'parses TYPE= from IdentifyLoginItemType output'
-    Skip "Requires mocking IdentifyLoginItemType output"
+    export EUID=0
+    export UID=0
+    export MOCK_IDENTIFY_LOGIN_ITEM_MODE="daemon"
+    UnloadAndRemoveLaunchDaemon() { return 0; }
+    When call RemoveLoginItems "com.test.daemon"
+    The status should eq 0
+    unset MOCK_IDENTIFY_LOGIN_ITEM_MODE
+    export EUID=1000
+    export UID=1000
   End
 
   It 'parses PATH= from IdentifyLoginItemType output'
-    Skip "Requires mocking IdentifyLoginItemType output"
+    export EUID=0
+    export UID=0
+    export MOCK_IDENTIFY_LOGIN_ITEM_MODE="app"
+    SafeRemovePath() { return 0; }
+    When call RemoveLoginItems "com.test.app"
+    The status should eq 0
+    unset MOCK_IDENTIFY_LOGIN_ITEM_MODE
+    export EUID=1000
+    export UID=1000
   End
 
   It 'parses DISPOSITION= from IdentifyLoginItemType output'
-    Skip "Requires mocking IdentifyLoginItemType output"
+    export EUID=0
+    export UID=0
+    export MOCK_IDENTIFY_LOGIN_ITEM_MODE="agent"
+    UnloadAndRemoveLaunchAgent() { return 0; }
+    When call RemoveLoginItems "com.test.agent"
+    The status should eq 0
+    unset MOCK_IDENTIFY_LOGIN_ITEM_MODE
+    export EUID=1000
+    export UID=1000
   End
 
   It 'returns 1 when TYPE cannot be parsed from output'
-    Skip "Requires mocking malformed IdentifyLoginItemType output"
+    export EUID=0
+    export UID=0
+    # Custom mock that returns malformed output
+    IdentifyLoginItemType() {
+      echo "MALFORMED OUTPUT WITHOUT TYPE"
+      return 0
+    }
+    When call RemoveLoginItems "com.test.item"
+    The status should eq 1
+    export EUID=1000
+    export UID=1000
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -189,7 +407,14 @@ Describe 'RemoveLoginItems'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'accepts flags after the identifier'
-    Skip "Requires mocking IdentifyLoginItemType with proper output format"
+    export EUID=0
+    export UID=0
+    export MOCK_IDENTIFY_LOGIN_ITEM_MODE="not_found"
+    When call RemoveLoginItems "com.test.item" --tolerant-missing
+    The status should eq 0
+    unset MOCK_IDENTIFY_LOGIN_ITEM_MODE
+    export EUID=1000
+    export UID=1000
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -197,11 +422,25 @@ Describe 'RemoveLoginItems'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'handles identifiers with underscores correctly'
-    Skip "Requires mocking IdentifyLoginItemType with underscore identifier"
+    export EUID=0
+    export UID=0
+    export MOCK_IDENTIFY_LOGIN_ITEM_MODE="not_found"
+    When call RemoveLoginItems --tolerant-missing "com_test_item"
+    The status should eq 0
+    unset MOCK_IDENTIFY_LOGIN_ITEM_MODE
+    export EUID=1000
+    export UID=1000
   End
 
   It 'handles identifiers with hyphens correctly'
-    Skip "Requires mocking IdentifyLoginItemType with hyphen identifier"
+    export EUID=0
+    export UID=0
+    export MOCK_IDENTIFY_LOGIN_ITEM_MODE="not_found"
+    When call RemoveLoginItems --tolerant-missing "com-test-item"
+    The status should eq 0
+    unset MOCK_IDENTIFY_LOGIN_ITEM_MODE
+    export EUID=1000
+    export UID=1000
   End
 
 End

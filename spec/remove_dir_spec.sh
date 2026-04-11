@@ -34,7 +34,13 @@ Describe 'RemoveDir'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 3 when not root and --needs-root is specified'
-    Skip "Requires non-root execution context to test the root guard"
+    export EUID=1000
+    export UID=1000
+    When call RemoveDir "/tmp/testdir" --needs-root
+    The status should eq 3
+    The output should include "Must be run as root"
+    export EUID=0
+    export UID=0
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -57,11 +63,23 @@ Describe 'RemoveDir'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 1 when path is not a directory'
-    Skip "Requires creating test file that is not a directory"
+    local test_file="/tmp/remove_dir_test_file_$$"
+    touch "$test_file"
+    When call RemoveDir "$test_file" --tolerant-missing
+    The status should eq 1
+    The output should include "Not a directory"
+    rm -f "$test_file"
   End
 
   It 'returns 1 when path is a symlink (not a directory)'
-    Skip "Requires creating test symlink"
+    local test_target="/tmp/remove_dir_target_$$"
+    local test_symlink="/tmp/remove_dir_symlink_$$"
+    touch "$test_target"
+    ln -s "$test_target" "$test_symlink"
+    When call RemoveDir "$test_symlink" --tolerant-missing
+    The status should eq 1
+    The output should include "Not a directory"
+    rm -f "$test_target" "$test_symlink"
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -69,11 +87,25 @@ Describe 'RemoveDir'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 0 when successfully removes an empty directory'
-    Skip "Requires creating test empty directory"
+    local test_dir="/tmp/remove_dir_test_$$"
+    mkdir -p "$test_dir"
+    When call RemoveDir "$test_dir"
+    The status should eq 0
+    [[ ! -d "$test_dir" ]]
+    rm -rf "$test_dir"
   End
 
   It 'returns 5 when rmdir fails (directory not empty)'
-    Skip "Requires creating test non-empty directory"
+    local test_dir="/tmp/remove_dir_test_nonempty_$$"
+    mkdir -p "$test_dir"
+    touch "$test_dir/file"
+    # Mock rmdir to fail
+    local old_path="$PATH"
+    export PATH="/nonexistent:$PATH"
+    When call RemoveDir "$test_dir" --tolerant-missing
+    The status should eq 5
+    rm -rf "$test_dir"
+    export PATH="$old_path"
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -81,7 +113,18 @@ Describe 'RemoveDir'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 1 when rmdir is not found'
-    Skip "Requires mocking missing rmdir binary"
+    local test_dir="/tmp/remove_dir_test_tool_$$"
+    mkdir -p "$test_dir"
+    local old_path="$PATH"
+    export PATH="/nonexistent:$PATH"
+    (
+      export PATH="/nonexistent:$PATH"
+      When call RemoveDir "$test_dir"
+      The status should eq 1
+      The output should include "rmdir not found"
+    )
+    rm -rf "$test_dir"
+    export PATH="$old_path"
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -102,12 +145,13 @@ Describe 'RemoveDir'
   # Edge cases
   # ─────────────────────────═══════════════════════════════════════
 
-  It 'clears immutable flags before removal when root'
-    Skip "Requires mocking chflags and test directory with flags"
-  End
-
   It 'handles directory paths with spaces correctly'
-    Skip "Requires creating test directory with spaces in name"
+    local test_dir="/tmp/remove dir with spaces_$$"
+    mkdir -p "$test_dir"
+    When call RemoveDir "$test_dir"
+    The status should eq 0
+    [[ ! -d "$test_dir" ]]
+    rm -rf "$test_dir"
   End
 
 End

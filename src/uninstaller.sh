@@ -320,6 +320,25 @@ main() {
 # ──────────────────────────────────────────────────────────────────────────────
 # Functions area (declare after main; helpers own tolerance logic)
 # ──────────────────────────────────────────────────────────────────────────────
+
+# Support for testing: use FAKE_EUID/FAKE_UID when available (set by spec_helper.sh)
+# This allows testing root/non-root behavior without actual root access
+_get_effective_euid() {
+  if [[ -n "${FAKE_EUID:-}" ]]; then
+    echo "$FAKE_EUID"
+  else
+    echo "$EUID"
+  fi
+}
+
+_get_effective_uid() {
+  if [[ -n "${FAKE_UID:-}" ]]; then
+    echo "$FAKE_UID"
+  else
+    echo "$UID"
+  fi
+}
+
 # @name ForgetPackage
 # @version 1.1.1
 # @approved true
@@ -427,7 +446,7 @@ ForgetPackage() {
   fi
 
   # --- root required ---
-  if [[ $EUID -ne 0 ]]; then
+  if [[ $( _get_effective_euid ) -ne 0 ]]; then
     echo "${my_echo_prefix}${my_err_prefix}Needs root: run as sudo/root."
     return 3
   fi
@@ -521,8 +540,8 @@ ListGraphicalUsers() {
   done
 
   # -------- root gate (opt-in) --------
-  if $needs_root && [[ $EUID -ne 0 ]]; then
-    echo "${my_echo_prefix}${my_err_prefix} Must be run as root (EUID $EUID) due to --needs-root"
+  if $needs_root && [[ $( _get_effective_euid ) -ne 0 ]]; then
+    echo "${my_echo_prefix}${my_err_prefix} Must be run as root (EUID $( _get_effective_euid )) due to --needs-root"
     return 3
   fi
 
@@ -652,8 +671,8 @@ QuitAppByPath() {
   fi
 
   # -------- root gate (opt-in) --------
-  if $needs_root && [[ $EUID -ne 0 ]]; then
-    echo "${my_echo_prefix}${my_err_prefix} Must be run as root (EUID $EUID) due to --needs-root"
+  if $needs_root && [[ $( _get_effective_euid ) -ne 0 ]]; then
+    echo "${my_echo_prefix}${my_err_prefix} Must be run as root (EUID $( _get_effective_euid )) due to --needs-root"
     return 3
   fi
 
@@ -859,8 +878,8 @@ RemoveDir() {
   fi
 
   # --- root gate (opt-in) ---
-  if $needs_root && [[ $EUID -ne 0 ]]; then
-    echo "${my_echo_prefix}${my_err_prefix}Must be run as root (EUID $EUID) due to --needs-root"
+  if $needs_root && [[ $( _get_effective_euid ) -ne 0 ]]; then
+    echo "${my_echo_prefix}${my_err_prefix}Must be run as root (EUID $( _get_effective_euid )) due to --needs-root"
     return 3
   fi
 
@@ -884,7 +903,7 @@ RemoveDir() {
   fi
 
   # --- clear immutable flags on the directory (root only) ---
-  if [[ $EUID -eq 0 && -x "$CHFLAGS_BIN" ]]; then
+  if [[ $( _get_effective_euid ) -eq 0 && -x "$CHFLAGS_BIN" ]]; then
     "$CHFLAGS_BIN" nouchg,noschg -- "$d" 2>/dev/null
   fi
 
@@ -978,8 +997,8 @@ RemovePathForUsers() {
   fi
 
   # -------- root gate (opt-in) --------
-  if $needs_root && [[ $EUID -ne 0 ]]; then
-    echo "${my_echo_prefix}${my_err_prefix} Must be run as root (EUID $EUID) due to --needs-root"
+  if $needs_root && [[ $( _get_effective_euid ) -ne 0 ]]; then
+    echo "${my_echo_prefix}${my_err_prefix} Must be run as root (EUID $( _get_effective_euid )) due to --needs-root"
     return 3
   fi
 
@@ -1116,8 +1135,8 @@ SafeDelete() {
   fi
 
   # --- root gate (opt-in) ---
-  if $needs_root && [[ $EUID -ne 0 ]]; then
-    echo "${my_echo_prefix}${my_err_prefix}Must be run as root (EUID $EUID) due to --needs-root"
+  if $needs_root && [[ $( _get_effective_euid ) -ne 0 ]]; then
+    echo "${my_echo_prefix}${my_err_prefix}Must be run as root (EUID $( _get_effective_euid )) due to --needs-root"
     return 3
   fi
 
@@ -1147,7 +1166,7 @@ SafeDelete() {
     return 0
   else
     # Regular file: clear immutable flags when root, then rm -f
-    if [[ $EUID -eq 0 && -x "$CHFLAGS_BIN" ]]; then
+    if [[ $( _get_effective_euid ) -eq 0 && -x "$CHFLAGS_BIN" ]]; then
       "$CHFLAGS_BIN" nouchg,noschg -- "$p" 2>/dev/null
     fi
     if "$RM_BIN" -f -- "$p" 2>/dev/null; then
@@ -1243,8 +1262,8 @@ SafeRemovePath() {
   fi
 
   # --- root gate (opt-in) ---
-  if $needs_root && [[ $EUID -ne 0 ]]; then
-    echo "${my_echo_prefix}${my_err_prefix}Must be run as root (EUID $EUID) due to --needs-root"
+  if $needs_root && [[ $( _get_effective_euid ) -ne 0 ]]; then
+    echo "${my_echo_prefix}${my_err_prefix}Must be run as root (EUID $( _get_effective_euid )) due to --needs-root"
     return 3
   fi
 
@@ -1399,8 +1418,8 @@ UnlinkSymlink() {
   fi
 
   # --- root gate (opt-in) ---
-  if $needs_root && [[ $EUID -ne 0 ]]; then
-    echo "${my_echo_prefix}${my_err_prefix}Must be run as root (EUID $EUID) due to --needs-root"
+  if $needs_root && [[ $( _get_effective_euid ) -ne 0 ]]; then
+    echo "${my_echo_prefix}${my_err_prefix}Must be run as root (EUID $( _get_effective_euid )) due to --needs-root"
     return 3
   fi
 
@@ -1424,7 +1443,7 @@ UnlinkSymlink() {
   fi
 
   # --- clear immutable flags on the link (root only; do not follow target) ---
-  if [[ $EUID -eq 0 && -x "$CHFLAGS_BIN" ]]; then
+  if [[ $( _get_effective_euid ) -eq 0 && -x "$CHFLAGS_BIN" ]]; then
     "$CHFLAGS_BIN" -h nouchg,noschg -- "$p" 2>/dev/null
   fi
 
@@ -1620,7 +1639,7 @@ DisableLaunchAgent() {
   fi
 
   # --- root gate (opt-in) ---
-  if $needs_root && [[ $EUID -ne 0 ]]; then
+  if $needs_root && [[ $( _get_effective_euid ) -ne 0 ]]; then
     echo "${my_echo_prefix}${my_err_prefix}Needs root: run as sudo/root."
     return 3
   fi
@@ -1832,7 +1851,7 @@ DisableLaunchDaemon() {
   fi
 
   # --- root check (daemons always require root) ---
-  if [[ $EUID -ne 0 ]]; then
+  if [[ $( _get_effective_euid ) -ne 0 ]]; then
     echo "${my_echo_prefix}${my_err_prefix}Needs root: LaunchDaemons require root to disable."
     return 3
   fi
@@ -1989,7 +2008,7 @@ UnloadAndRemoveLaunchAgent() {
   fi
 
   # --- root gate (opt-in) ---
-  if $needs_root && [[ $EUID -ne 0 ]]; then
+  if $needs_root && [[ $( _get_effective_euid ) -ne 0 ]]; then
     echo "${my_echo_prefix}${my_err_prefix}Needs root: run as sudo/root."
     return 3
   fi
@@ -2244,7 +2263,7 @@ UnloadAndRemoveLaunchDaemon() {
       return 0
     else
       # Only check root if we need to proceed with removal (plist exists or not tolerant)
-      if [[ $EUID -ne 0 ]]; then
+      if [[ $( _get_effective_euid ) -ne 0 ]]; then
         echo "${my_echo_prefix}${my_err_prefix}Needs root: LaunchDaemons require root to unload and remove."
         return 3
       fi
@@ -2254,7 +2273,7 @@ UnloadAndRemoveLaunchDaemon() {
   fi
 
   # --- root check (daemons always require root) ---
-  if [[ $EUID -ne 0 ]]; then
+  if [[ $( _get_effective_euid ) -ne 0 ]]; then
     echo "${my_echo_prefix}${my_err_prefix}Needs root: LaunchDaemons require root to unload and remove."
     return 3
   fi
@@ -2388,7 +2407,7 @@ function RemoveFinderExtension {
   done
 
   # Root gate (opt-in)
-  if $needs_root && [[ $EUID -ne 0 ]]; then
+  if $needs_root && [[ $( _get_effective_euid ) -ne 0 ]]; then
     echo "${my_echo_prefix}${my_err_prefix}Needs root: run as sudo/root."
     return 3
   fi
@@ -2519,7 +2538,7 @@ function RemoveQuickLookPlugin {
   done
 
   # Root gate (opt-in)
-  if $needs_root && [[ $EUID -ne 0 ]]; then
+  if $needs_root && [[ $( _get_effective_euid ) -ne 0 ]]; then
     echo "${my_echo_prefix}${my_err_prefix}Needs root: run as sudo/root."
     return 3
   fi
@@ -2653,7 +2672,7 @@ function RemovePrivilegedHelper {
   done
 
   # Root gate (opt-in)
-  if $needs_root && [[ $EUID -ne 0 ]]; then
+  if $needs_root && [[ $( _get_effective_euid ) -ne 0 ]]; then
     echo "${my_echo_prefix}${my_err_prefix}Needs root: run as sudo/root."
     return 3
   fi
@@ -2816,7 +2835,7 @@ function IdentifyLoginItemType {
   fi
 
   # Root gate (mandatory - sfltool dumpbtm requires root)
-  if [[ $EUID -ne 0 ]]; then
+  if [[ $( _get_effective_euid ) -ne 0 ]]; then
     echo "${my_echo_prefix}${my_err_prefix}Needs root: sfltool dumpbtm requires root."
     return 3
   fi

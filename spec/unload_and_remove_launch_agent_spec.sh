@@ -58,7 +58,13 @@ Describe 'UnloadAndRemoveLaunchAgent'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 3 when not root and --needs-root is specified'
-    Skip "Requires non-root execution context to test the root guard"
+    export EUID=1000
+    export UID=1000
+    When call UnloadAndRemoveLaunchAgent "com.vendor.agent" --needs-root
+    The status should eq 3
+    The output should include "Must be run as root"
+    export EUID=0
+    export UID=0
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -66,12 +72,25 @@ Describe 'UnloadAndRemoveLaunchAgent'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 0 when no plists found and --tolerant-missing is set'
+    export EUID=0
+    export UID=0
+    # Mock ListGraphicalUsers to return empty
+    ListGraphicalUsers() { return 0; }
     When call UnloadAndRemoveLaunchAgent --tolerant-missing "com.nonexistent.app.agent"
     The status should eq 0
+    export EUID=1000
+    export UID=1000
   End
 
   It 'returns 0 when no graphical users exist and --tolerant-missing is set'
-    Skip "Requires mocking ListGraphicalUsers to return empty"
+    export EUID=0
+    export UID=0
+    # Mock ListGraphicalUsers to return empty
+    ListGraphicalUsers() { return 0; }
+    When call UnloadAndRemoveLaunchAgent --tolerant-missing "com.nonexistent.app.agent"
+    The status should eq 0
+    export EUID=1000
+    export UID=1000
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -79,13 +98,26 @@ Describe 'UnloadAndRemoveLaunchAgent'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 4 when no plists found without --tolerant-missing'
+    export EUID=0
+    export UID=0
+    # Mock ListGraphicalUsers to return empty
+    ListGraphicalUsers() { return 0; }
     When call UnloadAndRemoveLaunchAgent "com.nonexistent.app.agent"
     The status should eq 4
     The output should include "No LaunchAgent plists"
+    export EUID=1000
+    export UID=1000
   End
 
   It 'returns 4 when no graphical users exist without --tolerant-missing'
-    Skip "Requires mocking ListGraphicalUsers to return empty"
+    export EUID=0
+    export UID=0
+    # Mock ListGraphicalUsers to return empty
+    ListGraphicalUsers() { return 0; }
+    When call UnloadAndRemoveLaunchAgent "com.nonexistent.app.agent"
+    The status should eq 4
+    export EUID=1000
+    export UID=1000
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -93,15 +125,56 @@ Describe 'UnloadAndRemoveLaunchAgent'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 0 when system agent plist is successfully removed'
-    Skip "Requires mocking launchctl and SafeDelete"
+    export EUID=0
+    export UID=0
+    local test_plist="/tmp/test_agent_$$"
+    mkdir -p /Library/LaunchAgents
+    touch "$test_plist"
+    # Mock launchctl to succeed
+    launchctl() { return 0; }
+    # Mock VerifyServiceUnloaded to succeed
+    VerifyServiceUnloaded() { return 0; }
+    # Mock SafeDelete to succeed
+    SafeDelete() { return 0; }
+    When call UnloadAndRemoveLaunchAgent "com.test.agent"
+    The status should eq 0
+    rm -f "$test_plist"
+    export EUID=1000
+    export UID=1000
   End
 
   It 'returns 0 when user agent plist is successfully removed'
-    Skip "Requires mocking ListGraphicalUsers, launchctl and SafeDelete"
+    export EUID=0
+    export UID=0
+    # Mock ListGraphicalUsers to return a test user
+    ListGraphicalUsers() { echo "testuser"; }
+    # Mock launchctl to succeed
+    launchctl() { return 0; }
+    # Mock VerifyServiceUnloaded to succeed
+    VerifyServiceUnloaded() { return 0; }
+    # Mock SafeDelete to succeed
+    SafeDelete() { return 0; }
+    When call UnloadAndRemoveLaunchAgent "com.test.agent"
+    The status should eq 0
+    export EUID=1000
+    export UID=1000
   End
 
   It 'returns 0 when agent plist exists in both system and user locations'
-    Skip "Requires mocking multiple plist locations"
+    export EUID=0
+    export UID=0
+    # Mock ListGraphicalUsers to return a test user
+    ListGraphicalUsers() { echo "testuser"; }
+    # Mock launchctl to succeed
+    launchctl() { return 0; }
+    # Mock VerifyServiceUnloaded to succeed
+    VerifyServiceUnloaded() { return 0; }
+    # Mock SafeDelete to succeed
+    SafeDelete() { return 0; }
+    When call UnloadAndRemoveLaunchAgent "com.test.agent"
+    The status should eq 0
+    export EUID=1000
+    export UID=1000
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -109,19 +182,71 @@ Describe 'UnloadAndRemoveLaunchAgent'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 5 when agent still running after bootout'
-    Skip "Requires mocking VerifyServiceUnloaded to return still running"
+    export EUID=0
+    export UID=0
+    # Mock ListGraphicalUsers to return a test user
+    ListGraphicalUsers() { echo "testuser"; }
+    # Mock launchctl to succeed
+    launchctl() { return 0; }
+    # Mock VerifyServiceUnloaded to fail (still running)
+    VerifyServiceUnloaded() { return 1; }
+    # Mock SafeDelete to succeed
+    SafeDelete() { return 0; }
+    When call UnloadAndRemoveLaunchAgent "com.test.agent"
+    The status should eq 5
+    export EUID=1000
+    export UID=1000
   End
 
   It 'returns 5 when SafeDelete fails to remove plist'
-    Skip "Requires mocking SafeDelete failure"
+    export EUID=0
+    export UID=0
+    # Mock ListGraphicalUsers to return a test user
+    ListGraphicalUsers() { echo "testuser"; }
+    # Mock launchctl to succeed
+    launchctl() { return 0; }
+    # Mock VerifyServiceUnloaded to succeed
+    VerifyServiceUnloaded() { return 0; }
+    # Mock SafeDelete to fail
+    SafeDelete() { return 5; }
+    When call UnloadAndRemoveLaunchAgent "com.test.agent"
+    The status should eq 5
+    export EUID=1000
+    export UID=1000
   End
 
   It 'returns 5 when plist still present after deletion attempt'
-    Skip "Requires mocking plist persistence after delete"
+    export EUID=0
+    export UID=0
+    # Mock ListGraphicalUsers to return a test user
+    ListGraphicalUsers() { echo "testuser"; }
+    # Mock launchctl to succeed
+    launchctl() { return 0; }
+    # Mock VerifyServiceUnloaded to succeed
+    VerifyServiceUnloaded() { return 0; }
+    # Mock SafeDelete to succeed but file persists
+    SafeDelete() { return 0; }
+    When call UnloadAndRemoveLaunchAgent "com.test.agent"
+    The status should eq 5
+    export EUID=1000
+    export UID=1000
   End
 
   It 'returns 5 when multiple operations fail'
-    Skip "Requires mocking multiple operation failures"
+    export EUID=0
+    export UID=0
+    # Mock ListGraphicalUsers to return a test user
+    ListGraphicalUsers() { echo "testuser"; }
+    # Mock launchctl to succeed
+    launchctl() { return 0; }
+    # Mock VerifyServiceUnloaded to fail
+    VerifyServiceUnloaded() { return 1; }
+    # Mock SafeDelete to fail
+    SafeDelete() { return 5; }
+    When call UnloadAndRemoveLaunchAgent "com.test.agent"
+    The status should eq 5
+    export EUID=1000
+    export UID=1000
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -129,19 +254,63 @@ Describe 'UnloadAndRemoveLaunchAgent'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 1 when launchctl is not found'
-    Skip "Requires mocking missing launchctl binary"
+    export EUID=0
+    export UID=0
+    local old_path="$PATH"
+    export PATH="/nonexistent:$PATH"
+    (
+      export PATH="/nonexistent:$PATH"
+      When call UnloadAndRemoveLaunchAgent "com.test.agent"
+      The status should eq 1
+      The output should include "launchctl not found"
+    )
+    export PATH="$old_path"
+    export EUID=1000
+    export UID=1000
   End
 
   It 'returns 1 when ListGraphicalUsers function is not defined'
-    Skip "Requires mocking missing ListGraphicalUsers function"
+    export EUID=0
+    export UID=0
+    # Temporarily remove ListGraphicalUsers
+    local orig_ListGraphicalUsers="$ListGraphicalUsers"
+    unset ListGraphicalUsers
+    When call UnloadAndRemoveLaunchAgent "com.test.agent"
+    The status should eq 1
+    export EUID=1000
+    export UID=1000
   End
 
   It 'returns 1 when VerifyServiceUnloaded function is not defined'
-    Skip "Requires mocking missing VerifyServiceUnloaded function"
+    export EUID=0
+    export UID=0
+    # Mock ListGraphicalUsers to return a test user
+    ListGraphicalUsers() { echo "testuser"; }
+    # Temporarily remove VerifyServiceUnloaded
+    local orig_VerifyServiceUnloaded="$VerifyServiceUnloaded"
+    unset VerifyServiceUnloaded
+    When call UnloadAndRemoveLaunchAgent "com.test.agent"
+    The status should eq 1
+    export EUID=1000
+    export UID=1000
   End
 
   It 'returns 1 when SafeDelete function is not defined'
-    Skip "Requires mocking missing SafeDelete function"
+    export EUID=0
+    export UID=0
+    # Mock ListGraphicalUsers to return a test user
+    ListGraphicalUsers() { echo "testuser"; }
+    # Mock launchctl to succeed
+    launchctl() { return 0; }
+    # Mock VerifyServiceUnloaded to succeed
+    VerifyServiceUnloaded() { return 0; }
+    # Temporarily remove SafeDelete
+    local orig_SafeDelete="$SafeDelete"
+    unset SafeDelete
+    When call UnloadAndRemoveLaunchAgent "com.test.agent"
+    The status should eq 1
+    export EUID=1000
+    export UID=1000
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -149,17 +318,36 @@ Describe 'UnloadAndRemoveLaunchAgent'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'accepts --tolerant-missing before the label'
+    export EUID=0
+    export UID=0
+    # Mock ListGraphicalUsers to return empty
+    ListGraphicalUsers() { return 0; }
     When call UnloadAndRemoveLaunchAgent --tolerant-missing "com.nonexistent.app.agent"
     The status should eq 0
+    export EUID=1000
+    export UID=1000
   End
 
   It 'accepts --tolerant-missing after the label'
+    export EUID=0
+    export UID=0
+    # Mock ListGraphicalUsers to return empty
+    ListGraphicalUsers() { return 0; }
     When call UnloadAndRemoveLaunchAgent "com.nonexistent.app.agent" --tolerant-missing
     The status should eq 0
+    export EUID=1000
+    export UID=1000
   End
 
   It 'accepts --needs-root flag before the label'
-    Skip "Requires root execution context when --needs-root is specified"
+    export EUID=0
+    export UID=0
+    # Mock ListGraphicalUsers to return empty
+    ListGraphicalUsers() { return 0; }
+    When call UnloadAndRemoveLaunchAgent --needs-root "com.test.agent"
+    The status should eq 0
+    export EUID=1000
+    export UID=1000
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -167,15 +355,42 @@ Describe 'UnloadAndRemoveLaunchAgent'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'skips users when UID cannot be resolved'
-    Skip "Requires mocking user without resolvable UID"
+    export EUID=0
+    export UID=0
+    # Mock ListGraphicalUsers to return a user without UID
+    ListGraphicalUsers() { echo "nouser"; }
+    # Mock launchctl to succeed
+    launchctl() { return 0; }
+    # Mock VerifyServiceUnloaded to succeed
+    VerifyServiceUnloaded() { return 0; }
+    # Mock SafeDelete to succeed
+    SafeDelete() { return 0; }
+    When call UnloadAndRemoveLaunchAgent "com.test.agent"
+    The status should eq 0
+    export EUID=1000
+    export UID=1000
   End
 
   It 'handles labels with underscores correctly'
-    Skip "Requires mocking launchctl with underscore label"
+    export EUID=0
+    export UID=0
+    # Mock ListGraphicalUsers to return empty
+    ListGraphicalUsers() { return 0; }
+    When call UnloadAndRemoveLaunchAgent --tolerant-missing "com_test_agent"
+    The status should eq 0
+    export EUID=1000
+    export UID=1000
   End
 
   It 'handles labels with hyphens correctly'
-    Skip "Requires mocking launchctl with hyphen label"
+    export EUID=0
+    export UID=0
+    # Mock ListGraphicalUsers to return empty
+    ListGraphicalUsers() { return 0; }
+    When call UnloadAndRemoveLaunchAgent --tolerant-missing "com-test-agent"
+    The status should eq 0
+    export EUID=1000
+    export UID=1000
   End
 
 End

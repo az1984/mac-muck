@@ -22,12 +22,17 @@ Describe 'VerifyServiceUnloaded'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 0 for a service that does not exist'
-    # launchctl print should return "Could not find service" for a nonexistent label
-    Skip "Requires macOS with launchctl (not available in CI)"
+    export MOCK_LAUNCHCTL_MODE="not_found"
+    When call VerifyServiceUnloaded "com.nonexistent.service"
+    The status should eq 0
+    unset MOCK_LAUNCHCTL_MODE
   End
 
   It 'returns 0 for a service with state = not running'
-    Skip "Requires mocking launchctl print output with not running state"
+    export MOCK_LAUNCHCTL_MODE="not_running"
+    When call VerifyServiceUnloaded "com.test.service"
+    The status should eq 0
+    unset MOCK_LAUNCHCTL_MODE
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -35,11 +40,18 @@ Describe 'VerifyServiceUnloaded'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 1 for a service that is running'
-    Skip "Requires macOS with a known running service to test against"
+    export MOCK_LAUNCHCTL_MODE="running"
+    When call VerifyServiceUnloaded "com.running.service"
+    The status should eq 1
+    The output should include "running"
+    unset MOCK_LAUNCHCTL_MODE
   End
 
   It 'returns 1 when service shows state = running in output'
-    Skip "Requires mocking launchctl print output with running state"
+    export MOCK_LAUNCHCTL_MODE="running"
+    When call VerifyServiceUnloaded "com.running.service"
+    The status should eq 1
+    unset MOCK_LAUNCHCTL_MODE
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -47,11 +59,18 @@ Describe 'VerifyServiceUnloaded'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 3 when launchctl output is ambiguous'
-    Skip "Requires mocking launchctl print with ambiguous output"
+    export MOCK_LAUNCHCTL_MODE="ambiguous"
+    When call VerifyServiceUnloaded "com.ambiguous.service"
+    The status should eq 3
+    The output should include "ambiguous"
+    unset MOCK_LAUNCHCTL_MODE
   End
 
   It 'returns 3 when launchctl output contains neither running nor not running'
-    Skip "Requires mocking launchctl print with unexpected output"
+    export MOCK_LAUNCHCTL_MODE="ambiguous"
+    When call VerifyServiceUnloaded "com.unknown.service"
+    The status should eq 3
+    unset MOCK_LAUNCHCTL_MODE
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -59,7 +78,15 @@ Describe 'VerifyServiceUnloaded'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 3 when launchctl is not found'
-    Skip "Requires mocking missing launchctl binary"
+    local old_path="$PATH"
+    export PATH="/nonexistent:$PATH"
+    (
+      export PATH="/nonexistent:$PATH"
+      When call VerifyServiceUnloaded "com.test.service"
+      The status should eq 3
+      The output should include "launchctl not found"
+    )
+    export PATH="$old_path"
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -67,11 +94,17 @@ Describe 'VerifyServiceUnloaded'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'handles gui domain for LaunchAgents'
-    Skip "Requires mocking launchctl print for gui domain"
+    export MOCK_LAUNCHCTL_MODE="not_found"
+    When call VerifyServiceUnloaded "gui/501/com.test.agent"
+    The status should eq 0
+    unset MOCK_LAUNCHCTL_MODE
   End
 
   It 'handles system domain for LaunchDaemons'
-    Skip "Requires mocking launchctl print for system domain"
+    export MOCK_LAUNCHCTL_MODE="not_found"
+    When call VerifyServiceUnloaded "system/com.test.daemon"
+    The status should eq 0
+    unset MOCK_LAUNCHCTL_MODE
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -79,15 +112,26 @@ Describe 'VerifyServiceUnloaded'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'handles labels with underscores correctly'
-    Skip "Requires mocking launchctl with underscore label"
+    export MOCK_LAUNCHCTL_MODE="not_found"
+    When call VerifyServiceUnloaded "com_test_service"
+    The status should eq 0
+    unset MOCK_LAUNCHCTL_MODE
   End
 
   It 'handles labels with hyphens correctly'
-    Skip "Requires mocking launchctl with hyphen label"
+    export MOCK_LAUNCHCTL_MODE="not_found"
+    When call VerifyServiceUnloaded "com-test-service"
+    The status should eq 0
+    unset MOCK_LAUNCHCTL_MODE
   End
 
   It 'handles empty launchctl output gracefully'
-    Skip "Requires mocking launchctl print with empty output"
+    export MOCK_LAUNCHCTL_OUTPUT=""
+    export MOCK_LAUNCHCTL_MODE="list_plists"
+    When call VerifyServiceUnloaded "com.empty.service"
+    The status should eq 3
+    unset MOCK_LAUNCHCTL_MODE
+    unset MOCK_LAUNCHCTL_OUTPUT
   End
 
 End

@@ -34,7 +34,13 @@ Describe 'UnlinkSymlink'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 3 when not root and --needs-root is specified'
-    Skip "Requires non-root execution context to test the root guard"
+    export EUID=1000
+    export UID=1000
+    When call UnlinkSymlink "/tmp/testlink" --needs-root
+    The status should eq 3
+    The output should include "Must be run as root"
+    export EUID=0
+    export UID=0
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -57,7 +63,12 @@ Describe 'UnlinkSymlink'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 1 when path is not a symlink'
-    Skip "Requires creating test file that is not a symlink"
+    local test_file="/tmp/unlink_test_file_$$"
+    touch "$test_file"
+    When call UnlinkSymlink "$test_file"
+    The status should eq 1
+    The output should include "Not a symlink"
+    rm -f "$test_file"
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -65,19 +76,52 @@ Describe 'UnlinkSymlink'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 0 when successfully unlinks a valid symlink'
-    Skip "Requires creating test symlink and mocking unlink"
+    local test_target="/tmp/unlink_target_$$"
+    local test_symlink="/tmp/unlink_symlink_$$"
+    touch "$test_target"
+    ln -s "$test_target" "$test_symlink"
+    # Mock unlink to succeed
+    unlink() { return 0; }
+    When call UnlinkSymlink "$test_symlink"
+    The status should eq 0
+    [[ ! -e "$test_symlink" ]]
+    rm -f "$test_target"
   End
 
   It 'returns 0 when successfully unlinks a broken symlink'
-    Skip "Requires creating broken symlink and mocking unlink"
+    local test_symlink="/tmp/unlink_broken_$$"
+    ln -s "/nonexistent/target" "$test_symlink"
+    # Mock unlink to succeed
+    unlink() { return 0; }
+    When call UnlinkSymlink "$test_symlink"
+    The status should eq 0
+    [[ ! -e "$test_symlink" ]]
+    rm -f "$test_symlink"
   End
 
   It 'returns 5 when unlink fails'
-    Skip "Requires mocking unlink failure"
+    local test_target="/tmp/unlink_fail_target_$$"
+    local test_symlink="/tmp/unlink_fail_symlink_$$"
+    touch "$test_target"
+    ln -s "$test_target" "$test_symlink"
+    # Mock unlink to fail
+    unlink() { return 1; }
+    When call UnlinkSymlink "$test_symlink"
+    The status should eq 5
+    rm -f "$test_target" "$test_symlink"
   End
 
   It 'falls back to rm -f when unlink fails but rm succeeds'
-    Skip "Requires mocking unlink failure and rm success"
+    local test_target="/tmp/unlink_fallback_target_$$"
+    local test_symlink="/tmp/unlink_fallback_symlink_$$"
+    touch "$test_target"
+    ln -s "$test_target" "$test_symlink"
+    # Mock unlink to fail, rm to succeed
+    unlink() { return 1; }
+    rm() { return 0; }
+    When call UnlinkSymlink "$test_symlink"
+    The status should eq 0
+    rm -f "$test_target" "$test_symlink"
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -85,7 +129,20 @@ Describe 'UnlinkSymlink'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 1 when unlink is not found'
-    Skip "Requires mocking missing unlink binary"
+    local test_target="/tmp/unlink_tool_target_$$"
+    local test_symlink="/tmp/unlink_tool_symlink_$$"
+    touch "$test_target"
+    ln -s "$test_target" "$test_symlink"
+    local old_path="$PATH"
+    export PATH="/nonexistent:$PATH"
+    (
+      export PATH="/nonexistent:$PATH"
+      When call UnlinkSymlink "$test_symlink"
+      The status should eq 1
+      The output should include "unlink not found"
+    )
+    rm -f "$test_target" "$test_symlink"
+    export PATH="$old_path"
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -107,11 +164,32 @@ Describe 'UnlinkSymlink'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'clears immutable flags on symlink before unlink when root'
-    Skip "Requires mocking chflags -h and test symlink with flags"
+    local test_target="/tmp/unlink_immutable_target_$$"
+    local test_symlink="/tmp/unlink_immutable_symlink_$$"
+    touch "$test_target"
+    ln -s "$test_target" "$test_symlink"
+    export EUID=0
+    export UID=0
+    # Mock unlink to succeed
+    unlink() { return 0; }
+    When call UnlinkSymlink "$test_symlink"
+    The status should eq 0
+    rm -f "$test_target" "$test_symlink"
+    export EUID=1000
+    export UID=1000
   End
 
   It 'handles symlink paths with spaces correctly'
-    Skip "Requires creating test symlink with spaces in name"
+    local test_target="/tmp/unlink space target_$$"
+    local test_symlink="/tmp/unlink space symlink_$$"
+    touch "$test_target"
+    ln -s "$test_target" "$test_symlink"
+    # Mock unlink to succeed
+    unlink() { return 0; }
+    When call UnlinkSymlink "$test_symlink"
+    The status should eq 0
+    [[ ! -e "$test_symlink" ]]
+    rm -f "$test_target" "$test_symlink"
   End
 
 End

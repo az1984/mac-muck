@@ -63,10 +63,14 @@ Describe 'RemovePrivilegedHelper'
   End
 
   # --- Root check (rc 3) ---
-  # Note: RemovePrivilegedHelper has opt-in --needs-root, but the function
-  # itself should work when run as root. This test verifies the flag behavior.
   It 'returns 3 when not root and --needs-root is specified'
-    Skip "Requires non-root execution context"
+    export EUID=1000
+    export UID=1000
+    When call RemovePrivilegedHelper "/Library/PrivilegedHelperTools/com.vendor.helper" --needs-root
+    The status should eq 3
+    The output should include "Must be run as root"
+    export EUID=0
+    export UID=0
   End
 
   # --- Tolerant missing (rc 0 when absent) ---
@@ -83,21 +87,39 @@ Describe 'RemovePrivilegedHelper'
   End
 
   # --- Happy path (rc 0 when present and removed) ---
-  # Note: This test requires mocking SafeDelete and creating a test file
   It 'returns 0 when helper is successfully removed'
-    Skip "Requires SafeDelete mocking and test file creation - manual testing recommended"
+    local test_helper="/tmp/test_helper_$$"
+    mkdir -p "/Library/PrivilegedHelperTools"
+    touch "$test_helper"
+    # Mock SafeDelete to succeed
+    SafeDelete() { return 0; }
+    When call RemovePrivilegedHelper "$test_helper"
+    The status should eq 0
+    rm -f "$test_helper"
   End
 
   # --- Verify-after failure (rc 5) ---
-  # Note: This test requires mocking SafeDelete to succeed but verification to fail
   It 'returns 5 when helper still exists after removal attempt'
-    Skip "Requires SafeDelete mocking - manual testing recommended"
+    local test_helper="/tmp/test_helper_verify_$$"
+    mkdir -p "/Library/PrivilegedHelperTools"
+    touch "$test_helper"
+    # Mock SafeDelete to succeed but path persists
+    SafeDelete() { return 0; }
+    When call RemovePrivilegedHelper "$test_helper"
+    The status should eq 5
+    rm -f "$test_helper"
   End
 
   # --- SafeDelete failure (rc 5) ---
-  # Note: This test requires mocking SafeDelete to return non-zero
   It 'returns 5 when SafeDelete reports failure'
-    Skip "Requires SafeDelete mocking - manual testing recommended"
+    local test_helper="/tmp/test_helper_fail_$$"
+    mkdir -p "/Library/PrivilegedHelperTools"
+    touch "$test_helper"
+    # Mock SafeDelete to fail
+    SafeDelete() { return 5; }
+    When call RemovePrivilegedHelper "$test_helper"
+    The status should eq 5
+    rm -f "$test_helper"
   End
 
 End

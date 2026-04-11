@@ -64,21 +64,36 @@ Describe 'RemoveQuickLookPlugin'
   End
 
   # --- Happy path (rc 0 when present and removed) ---
-  # Note: This test requires mocking SafeRemovePath and creating a test .qlgenerator
   It 'returns 0 when plugin is successfully removed'
-    Skip "Requires SafeRemovePath mocking and test file creation - manual testing recommended"
+    local test_plugin="/tmp/test_plugin_$$"
+    mkdir -p "$test_plugin"
+    # Mock SafeRemovePath to succeed
+    SafeRemovePath() { return 0; }
+    When call RemoveQuickLookPlugin "$test_plugin"
+    The status should eq 0
+    rm -rf "$test_plugin"
   End
 
   # --- Verify-after failure (rc 5) ---
-  # Note: This test requires mocking SafeRemovePath to succeed but verification to fail
   It 'returns 5 when plugin still exists after removal attempt'
-    Skip "Requires SafeRemovePath mocking - manual testing recommended"
+    local test_plugin="/tmp/test_plugin_verify_$$"
+    mkdir -p "$test_plugin"
+    # Mock SafeRemovePath to succeed but path persists
+    SafeRemovePath() { return 0; }
+    When call RemoveQuickLookPlugin "$test_plugin"
+    The status should eq 5
+    rm -rf "$test_plugin"
   End
 
   # --- SafeRemovePath failure (rc 5) ---
-  # Note: This test requires mocking SafeRemovePath to return non-zero
   It 'returns 5 when SafeRemovePath reports failure'
-    Skip "Requires SafeRemovePath mocking - manual testing recommended"
+    local test_plugin="/tmp/test_plugin_fail_$$"
+    mkdir -p "$test_plugin"
+    # Mock SafeRemovePath to fail
+    SafeRemovePath() { return 5; }
+    When call RemoveQuickLookPlugin "$test_plugin"
+    The status should eq 5
+    rm -rf "$test_plugin"
   End
 
 End

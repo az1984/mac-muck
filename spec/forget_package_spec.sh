@@ -66,7 +66,13 @@ Describe 'ForgetPackage'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 3 when not run as root'
-    Skip "Requires non-root execution context"
+    export EUID=1000
+    export UID=1000
+    When call ForgetPackage "com.vendor.app.pkg"
+    The status should eq 3
+    The output should include "Needs root"
+    export EUID=0
+    export UID=0
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -74,7 +80,14 @@ Describe 'ForgetPackage'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 0 when package not present and --tolerant-missing is set'
-    Skip "Requires root execution context (pkgutil needs root)"
+    export EUID=0
+    export UID=0
+    export MOCK_PKGUTIL_MODE="pkg_info_fail"
+    When call ForgetPackage "com.vendor.app.pkg" --tolerant-missing
+    The status should eq 0
+    unset MOCK_PKGUTIL_MODE
+    export EUID=1000
+    export UID=1000
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -82,7 +95,15 @@ Describe 'ForgetPackage'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 4 when package not present without --tolerant-missing'
-    Skip "Requires root execution context (pkgutil needs root)"
+    export EUID=0
+    export UID=0
+    export MOCK_PKGUTIL_MODE="pkg_info_fail"
+    When call ForgetPackage "com.vendor.app.pkg"
+    The status should eq 4
+    The output should include "not present"
+    unset MOCK_PKGUTIL_MODE
+    export EUID=1000
+    export UID=1000
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -90,24 +111,58 @@ Describe 'ForgetPackage'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 0 when package is successfully forgotten'
-    Skip "Requires root and mocking pkgutil --forget"
+    export EUID=0
+    export UID=0
+    export MOCK_PKGUTIL_MODE="forget_success"
+    When call ForgetPackage "com.vendor.app.pkg"
+    The status should eq 0
+    unset MOCK_PKGUTIL_MODE
+    export EUID=1000
+    export UID=1000
   End
 
   It 'accepts anchored format ^com.vendor.app.pkg$'
-    # Should normalize anchors and validate the inner id
-    Skip "Requires root execution context"
+    export EUID=0
+    export UID=0
+    export MOCK_PKGUTIL_MODE="forget_success"
+    When call ForgetPackage "^com.vendor.app.pkg$"
+    The status should eq 0
+    unset MOCK_PKGUTIL_MODE
+    export EUID=1000
+    export UID=1000
   End
 
   It 'normalizes leading ^ anchor'
-    Skip "Requires root execution context"
+    export EUID=0
+    export UID=0
+    export MOCK_PKGUTIL_MODE="forget_success"
+    When call ForgetPackage "^com.vendor.app.pkg"
+    The status should eq 0
+    unset MOCK_PKGUTIL_MODE
+    export EUID=1000
+    export UID=1000
   End
 
   It 'normalizes trailing $ anchor'
-    Skip "Requires root execution context"
+    export EUID=0
+    export UID=0
+    export MOCK_PKGUTIL_MODE="forget_success"
+    When call ForgetPackage "com.vendor.app.pkg$"
+    The status should eq 0
+    unset MOCK_PKGUTIL_MODE
+    export EUID=1000
+    export UID=1000
   End
 
   It 'normalizes both ^ and $ anchors'
-    Skip "Requires root execution context"
+    export EUID=0
+    export UID=0
+    export MOCK_PKGUTIL_MODE="forget_success"
+    When call ForgetPackage "^com.vendor.app.pkg$"
+    The status should eq 0
+    unset MOCK_PKGUTIL_MODE
+    export EUID=1000
+    export UID=1000
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -115,11 +170,27 @@ Describe 'ForgetPackage'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 5 when forget succeeds but receipt still present'
-    Skip "Requires mocking pkgutil to persist receipt"
+    export EUID=0
+    export UID=0
+    export MOCK_PKGUTIL_MODE="still_present"
+    When call ForgetPackage "com.vendor.app.pkg"
+    The status should eq 5
+    The output should include "still present"
+    unset MOCK_PKGUTIL_MODE
+    export EUID=1000
+    export UID=1000
   End
 
   It 'returns 5 when forget fails and receipt still present'
-    Skip "Requires mocking pkgutil --forget failure"
+    export EUID=0
+    export UID=0
+    export MOCK_PKGUTIL_MODE="forget_fail"
+    When call ForgetPackage "com.vendor.app.pkg"
+    The status should eq 5
+    The output should include "failure"
+    unset MOCK_PKGUTIL_MODE
+    export EUID=1000
+    export UID=1000
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -127,7 +198,19 @@ Describe 'ForgetPackage'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 1 when pkgutil is not found'
-    Skip "Requires mocking missing pkgutil binary"
+    local old_path="$PATH"
+    export PATH="/nonexistent:$PATH"
+    export EUID=0
+    export UID=0
+    (
+      export PATH="/nonexistent:$PATH"
+      When call ForgetPackage "com.vendor.app.pkg"
+      The status should eq 1
+      The output should include "Missing required tool"
+    )
+    export PATH="$old_path"
+    export EUID=1000
+    export UID=1000
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -135,11 +218,25 @@ Describe 'ForgetPackage'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'accepts flags before the package id'
-    Skip "Requires root execution context (pkgutil needs root)"
+    export EUID=0
+    export UID=0
+    export MOCK_PKGUTIL_MODE="pkg_info_fail"
+    When call ForgetPackage --tolerant-missing "com.vendor.app.pkg"
+    The status should eq 0
+    unset MOCK_PKGUTIL_MODE
+    export EUID=1000
+    export UID=1000
   End
 
   It 'accepts flags after the package id'
-    Skip "Requires root execution context (pkgutil needs root)"
+    export EUID=0
+    export UID=0
+    export MOCK_PKGUTIL_MODE="pkg_info_fail"
+    When call ForgetPackage "com.vendor.app.pkg" --tolerant-missing
+    The status should eq 0
+    unset MOCK_PKGUTIL_MODE
+    export EUID=1000
+    export UID=1000
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -147,11 +244,25 @@ Describe 'ForgetPackage'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'handles package ids with underscores correctly'
-    Skip "Requires root execution context"
+    export EUID=0
+    export UID=0
+    export MOCK_PKGUTIL_MODE="pkg_info_fail"
+    When call ForgetPackage "com_vendor_app.test" --tolerant-missing
+    The status should eq 0
+    unset MOCK_PKGUTIL_MODE
+    export EUID=1000
+    export UID=1000
   End
 
   It 'handles package ids with hyphens correctly'
-    Skip "Requires root execution context"
+    export EUID=0
+    export UID=0
+    export MOCK_PKGUTIL_MODE="pkg_info_fail"
+    When call ForgetPackage "com-vendor-app.test" --tolerant-missing
+    The status should eq 0
+    unset MOCK_PKGUTIL_MODE
+    export EUID=1000
+    export UID=1000
   End
 
 End
