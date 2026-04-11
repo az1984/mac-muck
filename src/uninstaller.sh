@@ -365,10 +365,6 @@ ForgetPackage() {
   # --- arg parsing ---
   local tolerant=false
   local raw_arg=""
-  if (( $# == 0 || $# > 2 )); then
-    echo "${my_echo_prefix}${my_err_prefix}Bad input: expected <pkg_id> [--tolerant-missing]. Got $# args."
-    return 2
-  fi
   local arg
   for arg in "$@"; do
     case "$arg" in
@@ -390,6 +386,7 @@ ForgetPackage() {
     esac
   done
 
+  # Validate required argument after parsing (so duplicate flags are caught first)
   if [[ -z "$raw_arg" ]]; then
     echo "${my_echo_prefix}${my_err_prefix}Bad input: package id is required."
     return 2
@@ -893,14 +890,11 @@ RemovePathForUsers() {
   local my_err_prefix="ERROR:    "
   local my_dbg_prefix="DEBUG:    "
 
-  # -------- args / flags --------
-  if (( $# < 1 )); then
-    echo "${my_echo_prefix}${my_err_prefix} Bad input: expected at least 1 arg (relative path)"
-    return 2
-  fi
-  local rel="$1"; shift
+  # -------- args / flags (parse first to catch duplicates before validation) --------
+  local rel=""
   local tolerant=false needs_root=false
   local users=()
+  local arg_count=0
   while (( $# )); do
     case "$1" in
       --tolerant-missing)
@@ -916,10 +910,24 @@ RemovePathForUsers() {
         fi
         needs_root=true ;;
       --*) echo "${my_echo_prefix}${my_err_prefix} Unknown flag: $1"; return 2 ;;
-      *) users+=("$1") ;;
+      *)
+        # Count non-flag arguments
+        ((arg_count++))
+        if [[ -z "$rel" ]]; then
+          rel="$1"
+        else
+          users+=("$1")
+        fi
+        ;;
     esac
     shift
   done
+
+  # Validate required argument after parsing (so duplicate flags are caught first)
+  if [[ -z "$rel" ]]; then
+    echo "${my_echo_prefix}${my_err_prefix} Bad input: expected at least 1 arg (relative path)"
+    return 2
+  fi
 
   # -------- root gate (opt-in) --------
   if $needs_root && [[ $EUID -ne 0 ]]; then
@@ -1019,13 +1027,10 @@ SafeDelete() {
   local RM_BIN="/bin/rm"
   local CHFLAGS_BIN="/usr/bin/chflags"
 
-  # --- args / flags ---
-  if (($# < 1 || $# > 3)); then
-    echo "${my_echo_prefix}${my_err_prefix}Bad input: expected 1..3 args"
-    return 2
-  fi
-  local p="$1"; shift
+  # --- args / flags (parse first to catch duplicates before count validation) ---
+  local p=""
   local tolerant=false needs_root=false
+  local arg_count=0
   while (($#)); do
     case "$1" in
       --tolerant-missing)
@@ -1040,9 +1045,27 @@ SafeDelete() {
           return 2
         fi
         needs_root=true ;;
-      *) echo "${my_echo_prefix}${my_err_prefix}Unknown flag: $1"; return 2 ;;
-    esac; shift
+      -*) echo "${my_echo_prefix}${my_err_prefix}Unknown flag: $1"; return 2 ;;
+      *)
+        # Count non-flag arguments
+        ((arg_count++))
+        if [[ -z "$p" ]]; then
+          p="$1"
+        fi
+        ;;
+    esac
+    shift
   done
+
+  # Validate argument count after parsing (so duplicate flags are caught first)
+  if [[ -z "$p" ]]; then
+    echo "${my_echo_prefix}${my_err_prefix}Bad input: expected path argument"
+    return 2
+  fi
+  if (( arg_count > 1 )); then
+    echo "${my_echo_prefix}${my_err_prefix}Bad input: expected 1..3 args (path + optional flags)"
+    return 2
+  fi
 
   # --- root gate (opt-in) ---
   if $needs_root && [[ $EUID -ne 0 ]]; then
@@ -1131,13 +1154,10 @@ SafeRemovePath() {
   local FIND_BIN="/usr/bin/find"
   local REALPATH_BIN="/usr/bin/realpath"
 
-  # --- args / flags ---
-  if (($# < 1 || $# > 3)); then
-    echo "${my_echo_prefix}${my_err_prefix}Bad input: expected 1..3 args"
-    return 2
-  fi
-  local root="$1"; shift
+  # --- args / flags (parse first to catch duplicates before count validation) ---
+  local root=""
   local tolerant=false needs_root=false
+  local arg_count=0
   while (($#)); do
     case "$1" in
       --tolerant-missing)
@@ -1152,10 +1172,27 @@ SafeRemovePath() {
           return 2
         fi
         needs_root=true ;;
-      *) echo "${my_echo_prefix}${my_err_prefix}Unknown flag: $1"; return 2 ;;
+      -*) echo "${my_echo_prefix}${my_err_prefix}Unknown flag: $1"; return 2 ;;
+      *)
+        # Count non-flag arguments
+        ((arg_count++))
+        if [[ -z "$root" ]]; then
+          root="$1"
+        fi
+        ;;
     esac
     shift
   done
+
+  # Validate argument count after parsing (so duplicate flags are caught first)
+  if [[ -z "$root" ]]; then
+    echo "${my_echo_prefix}${my_err_prefix}Bad input: expected path argument"
+    return 2
+  fi
+  if (( arg_count > 1 )); then
+    echo "${my_echo_prefix}${my_err_prefix}Bad input: expected 1..3 args (path + optional flags)"
+    return 2
+  fi
 
   # --- root gate (opt-in) ---
   if $needs_root && [[ $EUID -ne 0 ]]; then
@@ -1273,13 +1310,10 @@ UnlinkSymlink() {
   local CHFLAGS_BIN="/usr/bin/chflags"
   local RM_BIN="/bin/rm"
 
-  # --- args / flags ---
-  if (($# < 1 || $# > 3)); then
-    echo "${my_echo_prefix}${my_err_prefix}Bad input: expected 1..3 args"
-    return 2
-  fi
-  local p="$1"; shift
+  # --- args / flags (parse first to catch duplicates before count validation) ---
+  local p=""
   local tolerant=false needs_root=false
+  local arg_count=0
   while (($#)); do
     case "$1" in
       --tolerant-missing)
@@ -1294,9 +1328,27 @@ UnlinkSymlink() {
           return 2
         fi
         needs_root=true ;;
-      *) echo "${my_echo_prefix}${my_err_prefix}Unknown flag: $1"; return 2 ;;
-    esac; shift
+      -*) echo "${my_echo_prefix}${my_err_prefix}Unknown flag: $1"; return 2 ;;
+      *)
+        # Count non-flag arguments
+        ((arg_count++))
+        if [[ -z "$p" ]]; then
+          p="$1"
+        fi
+        ;;
+    esac
+    shift
   done
+
+  # Validate argument count after parsing (so duplicate flags are caught first)
+  if [[ -z "$p" ]]; then
+    echo "${my_echo_prefix}${my_err_prefix}Bad input: expected path argument"
+    return 2
+  fi
+  if (( arg_count > 1 )); then
+    echo "${my_echo_prefix}${my_err_prefix}Bad input: expected 1..3 args (path + optional flags)"
+    return 2
+  fi
 
   # --- root gate (opt-in) ---
   if $needs_root && [[ $EUID -ne 0 ]]; then
