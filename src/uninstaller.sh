@@ -1018,8 +1018,18 @@ SafeDelete() {
   local tolerant=false needs_root=false
   while (($#)); do
     case "$1" in
-      --tolerant-missing) tolerant=true ;;
-      --needs-root)       needs_root=true ;;
+      --tolerant-missing)
+        if [[ $tolerant == true ]]; then
+          echo "${my_echo_prefix}${my_err_prefix}Bad input: duplicate --tolerant-missing flag."
+          return 2
+        fi
+        tolerant=true ;;
+      --needs-root)
+        if [[ $needs_root == true ]]; then
+          echo "${my_echo_prefix}${my_err_prefix}Bad input: duplicate --needs-root flag."
+          return 2
+        fi
+        needs_root=true ;;
       *) echo "${my_echo_prefix}${my_err_prefix}Unknown flag: $1"; return 2 ;;
     esac; shift
   done
@@ -1120,8 +1130,18 @@ SafeRemovePath() {
   local tolerant=false needs_root=false
   while (($#)); do
     case "$1" in
-      --tolerant-missing) tolerant=true ;;
-      --needs-root)       needs_root=true ;;
+      --tolerant-missing)
+        if [[ $tolerant == true ]]; then
+          echo "${my_echo_prefix}${my_err_prefix}Bad input: duplicate --tolerant-missing flag."
+          return 2
+        fi
+        tolerant=true ;;
+      --needs-root)
+        if [[ $needs_root == true ]]; then
+          echo "${my_echo_prefix}${my_err_prefix}Bad input: duplicate --needs-root flag."
+          return 2
+        fi
+        needs_root=true ;;
       *) echo "${my_echo_prefix}${my_err_prefix}Unknown flag: $1"; return 2 ;;
     esac
     shift
