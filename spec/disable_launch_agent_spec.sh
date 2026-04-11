@@ -3,6 +3,48 @@
 
 Describe 'DisableLaunchAgent'
 
+  # Mock launchctl to prevent real system interactions
+  BeforeEach 'BeforeEachDisableLaunchAgent'
+    # Mock ListGraphicalUsers to return a test user
+    ListGraphicalUsers() {
+      echo "testuser"
+    }
+    
+    # Mock id command to return a test UID
+    id() {
+      if [[ "$1" == "-u" ]]; then
+        echo "501"
+      else
+        command id "$@"
+      fi
+    }
+    
+    # Mock launchctl to simulate agent not found
+    launchctl() {
+      case "$*" in
+        print\ gui/507/*|print\ gui/501/*)
+          # Simulate "agent not found" scenario
+          echo "Could not find service: gui/501/$3" >&2
+          return 1 ;;
+        print-disabled\ *)
+          # Empty output = no disabled services
+          return 0 ;;
+        disable\ *)
+          # Disable succeeds
+          return 0 ;;
+        *)
+          return 0 ;;
+      esac
+    }
+  End
+  
+  AfterEach 'AfterEachDisableLaunchAgent'
+    # Restore original commands
+    unset -f ListGraphicalUsers 2>/dev/null || true
+    unset -f launchctl 2>/dev/null || true
+    unset -f id 2>/dev/null || true
+  End
+
   # ─────────────────────────═══════════════════════════════════════
   # Bad input (rc 2)
   # ─────────────────────────═══════════════════════════════════════
