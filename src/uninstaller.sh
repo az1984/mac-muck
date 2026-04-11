@@ -2085,6 +2085,13 @@ UnloadAndRemoveLaunchDaemon() {
     return 2
   fi
 
+  # --- strict label validation (reverse-DNS with ≥3 labels) ---
+  local id_re='^[A-Za-z][A-Za-z0-9]*(\.[A-Za-z][A-Za-z0-9_-]*){2,}$'
+  if [[ ! "$label" =~ $id_re ]]; then
+    echo "${my_echo_prefix}${my_err_prefix}Invalid label format: $label"
+    return 2
+  fi
+
   # --- root check (daemons always require root) ---
   if [[ $EUID -ne 0 ]]; then
     echo "${my_echo_prefix}${my_err_prefix}Needs root: LaunchDaemons require root to unload and remove."
@@ -2096,13 +2103,6 @@ UnloadAndRemoveLaunchDaemon() {
   if [[ ! -x "$LAUNCHCTL_BIN" ]]; then
     echo "${my_echo_prefix}${my_err_prefix}Missing required tool: $LAUNCHCTL_BIN"
     return 1
-  fi
-
-  # --- strict label validation (reverse-DNS with ≥3 labels) ---
-  local id_re='^[A-Za-z][A-Za-z0-9]*(\.[A-Za-z][A-Za-z0-9_-]*){2,}$'
-  if [[ ! "$label" =~ $id_re ]]; then
-    echo "${my_echo_prefix}${my_err_prefix}Invalid label format: $label"
-    return 2
   fi
 
   # --- locate the plist ---
