@@ -3030,12 +3030,26 @@ function ParseInput {
   # --- Check for --manifest mode first (highest priority) ---
   local manifest_path=""
   local arg
-  for arg in "$@"; do
+  local i=1
+  while (( i <= $# )); do
+    arg="${!i}"
     case "$arg" in
       --manifest=*)
         manifest_path="${arg#--manifest=}"
         break ;;
+      --manifest)
+        # --manifest without = requires next arg to be the path
+        if (( i < $# )); then
+          ((i++))
+          manifest_path="${!i}"
+        else
+          # --manifest specified but no path follows
+          echo "ERROR: ParseInput --manifest requires a path argument" >&2
+          return 2
+        fi
+        break ;;
     esac
+    ((i++))
   done
 
   if [[ -n "$manifest_path" ]]; then
