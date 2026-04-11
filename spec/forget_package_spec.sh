@@ -111,10 +111,12 @@ Describe 'ForgetPackage'
     export FAKE_EUID=0
     export FAKE_UID=0
     export MOCK_PKGUTIL_MODE="forget_success"
+    export PKGUTIL_BIN="/Users/andrewezimmer/Documents/GitHub/mac-muck/tools/mock_bin/pkgutil"
     When call ForgetPackage "com.vendor.app.pkg"
     The status should eq 0
     unset MOCK_PKGUTIL_MODE
     unset FAKE_EUID FAKE_UID
+    unset PKGUTIL_BIN
   End
 
   It 'accepts anchored format ^com.vendor.app.pkg$'

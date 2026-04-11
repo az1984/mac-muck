@@ -452,7 +452,8 @@ ForgetPackage() {
   fi
 
   # --- tool presence ---
-  local PKGUTIL_BIN="/usr/sbin/pkgutil"
+  # Allow PKGUTIL_BIN to be overridden via environment variable for testing
+  local PKGUTIL_BIN="${PKGUTIL_BIN:-/usr/sbin/pkgutil}"
   if [[ ! -x "$PKGUTIL_BIN" ]]; then
     echo "${my_echo_prefix}${my_err_prefix}Missing required tool: $PKGUTIL_BIN"
     return 1
