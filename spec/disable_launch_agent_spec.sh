@@ -4,8 +4,8 @@
 # Mock launchctl to prevent real system interactions
 launchctl() {
   case "$*" in
-    print\ gui/507/*|print\ gui/501/*)
-      # Simulate "agent not found" scenario
+    print\ gui/501/*|print\ gui/507/*)
+      # Simulate "agent not found" scenario for nonexistent agents
       echo "Could not find service: gui/501/$3" >&2
       return 1 ;;
     print-disabled\ *)
