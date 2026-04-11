@@ -2,6 +2,75 @@
 
 This document outlines unit testing strategies for all major functions in the uninstaller script. Each function's possible return codes (rc 0–5) are documented with test scenarios and expected outcomes.
 
+---
+
+## Test Infrastructure
+
+### spec_helper.sh Function Extraction
+
+The test helper (`spec/spec_helper.sh`) uses a function extraction approach to load only the function definitions from `src/uninstaller.sh` without executing the script's main entry point. This is necessary because:
+
+1. The uninstaller script follows a strict four-section layout:
+   - **Section 1: Config** — global variables and target arrays
+   - **Section 2: main()** — defined but not called
+   - **Section 3: Functions** — all helper function definitions
+   - **Section 4: ParseInput "$@" then main "$@"** — script invocation
+
+2. The `spec_helper.sh` extracts functions between the "# Functions area" and "# Run" markers using `sed`, then sources the extracted content.
+
+3. This approach allows tests to run in a non-root shell environment while still having access to all function definitions.
+
+### Stub Environment Variables
+
+The `spec_helper.sh` sets up the following stub globals that functions reference:
+
+| Variable | Default Value | Purpose |
+|----------|---------------|---------|
+| `APP_NAME` | `TestApp` | Application name for logging |
+| `ECHO_PREFIX` | `${APP_NAME} Uninstaller.sh - ` | Logging prefix |
+| `VERBOSE` | `false` | Verbose output toggle |
+| `DEBUG` | `false` | Debug output toggle |
+| `LOG_FN_WIDTH` | `24` | Function name column width |
+| `LOG_LVL_WIDTH` | `10` | Log level column width |
+
+### Root Check Simulation
+
+For tests that require root privileges (Category 3 tests), the `EUID` and `UID` environment variables can be set to `0` to simulate a root environment:
+
+```bash
+export EUID=0
+export UID=0
+```
+
+This allows tests to bypass the root gate and verify other functionality without requiring actual root access.
+
+---
+
+## Coding Standards for Testability
+
+### Input Validation Before Root Check
+
+All functions must validate input arguments **before** checking for root privileges. This ensures that:
+
+1. Invalid input returns rc 2 (bad input) regardless of root status
+2. Tests can verify input validation without needing root access
+3. Error messages are consistent and predictable
+
+**Correct Order:**
+1. Check argument count
+2. Parse flags (with duplicate detection)
+3. Validate argument formats (reverse-DNS, paths, etc.)
+4. Check root (if required)
+5. Proceed with operation
+
+**Incorrect Order (causes test failures):**
+1. Check argument count
+2. Parse flags
+3. Check root ← Too early!
+4. Validate argument formats
+
+---
+
 ## Return Code Scheme
 
 | Code | Meaning | Description |
