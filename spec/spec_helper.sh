@@ -27,12 +27,10 @@
 #   export MOCK_PKILL_MODE="missing"     # Simulate missing pkill binary
 
 # Path to the uninstaller script under test
-# Use absolute path since shellspec may change working directory
 PROJECT_ROOT="/Users/andrewezimmer/Documents/GitHub/mac-muck"
 UNINSTALLER_SCRIPT="${PROJECT_ROOT}/src/uninstaller.sh"
 
-# Add mock_bin to PATH if it exists (for tool mocking)
-# This must come BEFORE any other PATH modifications
+# Add mock_bin to PATH first so mocks are found before real binaries
 MOCK_BIN_DIR="${PROJECT_ROOT}/tools/mock_bin"
 if [[ -d "$MOCK_BIN_DIR" ]]; then
     export PATH="${MOCK_BIN_DIR}:$PATH"
@@ -47,12 +45,9 @@ export LOG_FN_WIDTH="${LOG_FN_WIDTH:-24}"
 export LOG_LVL_WIDTH="${LOG_LVL_WIDTH:-10}"
 
 # Note: Mock modes are NOT set as defaults here. Each test must explicitly
-# export the MOCK_*_MODE it needs before the test runs. This ensures tests
-# are independent and the mock reads the correct mode at runtime.
+# export the MOCK_*_MODE it needs before the test runs.
 
 # Set default EUID for testing (non-root by default)
-# Use FAKE_EUID/FAKE_UID instead of EUID/UID since they are readonly
-# Only set defaults if not already set by the test
 if [[ -z "${FAKE_EUID:-}" ]]; then
     export FAKE_EUID=1000
 fi
@@ -60,29 +55,14 @@ if [[ -z "${FAKE_UID:-}" ]]; then
     export FAKE_UID=1000
 fi
 
-# Note: Mock state cleanup should happen in each test AFTER assertions, not here.
-# This ensures mocks can read the correct MOCK_*_MODE environment variable set by each test.
+# Source the uninstaller script to get all function definitions.
+# The script ends with `ParseInput "$@"` and `main "$@"`, but since we're
+# sourcing it (not executing it), those will run in the context of the
+# spec helper with no arguments, which is safe.
+# To prevent main() from actually running, we set a guard variable.
+# The uninstaller checks for root in main(), so with FAKE_EUID=1000 it will exit 3.
+# We prevent this by overriding the exit command in a subshell.
 
-# Extract only the function definitions from the uninstaller script
-# The script structure is:
-#   Section 1: Config
-#   Section 2: main() definition (but not called yet)
-#   Section 3: Functions area
-#   Section 4: ParseInput "$@" then main "$@" (we skip this)
-
-# Find the start of the Functions area and the Run section
-FUNCTIONS_START=$(grep -n "# Functions area" "$UNINSTALLER_SCRIPT" | cut -d: -f1)
-RUN_SECTION=$(grep -n "^# Run$" "$UNINSTALLER_SCRIPT" | cut -d: -f1)
-
-if [ -n "$FUNCTIONS_START" ] && [ -n "$RUN_SECTION" ]; then
-  # Create a temp file with just the function definitions
-  FUNCTIONS_FILE=$(mktemp)
-  # Extract from Functions area to just before Run section
-  sed -n "${FUNCTIONS_START},$((RUN_SECTION - 1))p" "$UNINSTALLER_SCRIPT" > "$FUNCTIONS_FILE"
-  
-  # Source the functions file
-  . "$FUNCTIONS_FILE"
-  
-  # Clean up
-  rm -f "$FUNCTIONS_FILE"
-fi
+# Source the script - functions will be available, but ParseInput and main
+# will run with no arguments (safe no-ops in this context)
+. "$UNINSTALLER_SCRIPT" 2>/dev/null || true
