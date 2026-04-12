@@ -626,10 +626,19 @@ QuitAppByPath() {
   local my_err_prefix="ERROR:    "
   local my_dbg_prefix="DEBUG:    "
 
-  local PKILL="/usr/bin/pkill"
-  local PGREP="/usr/bin/pgrep"
+  local PKILL="${PKILL_BIN:-/usr/bin/pkill}"
+  local PGREP="${PGREP_BIN:-/usr/bin/pgrep}"
   local PLISTB="/usr/libexec/PlistBuddy"
   local KILL="/bin/kill"
+
+  if [[ ! -x "$PGREP" ]]; then
+    echo "${my_echo_prefix}${my_err_prefix}Missing required tool: $PGREP"
+    return 1
+  fi
+  if [[ ! -x "$PKILL" ]]; then
+    echo "${my_echo_prefix}${my_err_prefix}Missing required tool: $PKILL"
+    return 1
+  fi
 
   # -------- args / flags (parse first to catch duplicates before count validation) --------
   local target=""
