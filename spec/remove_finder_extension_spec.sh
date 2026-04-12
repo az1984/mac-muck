@@ -56,7 +56,7 @@ Describe 'RemoveFinderExtension'
     export FAKE_UID=1000
     When call RemoveFinderExtension "com.vendor.extension" --needs-root
     The status should eq 3
-    The output should include "Must be run as root"
+    The output should include "Needs root"
     export FAKE_EUID=0
     export FAKE_UID=0
   End
@@ -66,9 +66,11 @@ Describe 'RemoveFinderExtension'
     export FAKE_EUID=0
     export FAKE_UID=0
     export MOCK_PLUGINKIT_MODE="not_found"
+    export PLUGINKIT_BIN="/Users/andrewezimmer/Documents/GitHub/mac-muck/tools/mock_bin/pluginkit"
     When call RemoveFinderExtension --tolerant-missing "com.nonexistent.extension"
     The status should eq 0
     unset MOCK_PLUGINKIT_MODE
+    unset PLUGINKIT_BIN
     export FAKE_EUID=1000
     export FAKE_UID=1000
   End
@@ -78,10 +80,12 @@ Describe 'RemoveFinderExtension'
     export FAKE_EUID=0
     export FAKE_UID=0
     export MOCK_PLUGINKIT_MODE="not_found"
+    export PLUGINKIT_BIN="/Users/andrewezimmer/Documents/GitHub/mac-muck/tools/mock_bin/pluginkit"
     When call RemoveFinderExtension "com.nonexistent.extension"
     The status should eq 4
     The output should include "not registered"
     unset MOCK_PLUGINKIT_MODE
+    unset PLUGINKIT_BIN
     export FAKE_EUID=1000
     export FAKE_UID=1000
   End
@@ -91,9 +95,15 @@ Describe 'RemoveFinderExtension'
     export FAKE_EUID=0
     export FAKE_UID=0
     export MOCK_PLUGINKIT_MODE="success"
+    export PLUGINKIT_BIN="/Users/andrewezimmer/Documents/GitHub/mac-muck/tools/mock_bin/pluginkit"
+    export MOCK_PLUGINKIT_STATE_FILE="/tmp/mock_pluginkit_state_test"
+    rm -f "$MOCK_PLUGINKIT_STATE_FILE"
     When call RemoveFinderExtension "com.vendor.extension"
     The status should eq 0
+    rm -f "$MOCK_PLUGINKIT_STATE_FILE"
     unset MOCK_PLUGINKIT_MODE
+    unset MOCK_PLUGINKIT_STATE_FILE
+    unset PLUGINKIT_BIN
     export FAKE_EUID=1000
     export FAKE_UID=1000
   End
@@ -103,10 +113,12 @@ Describe 'RemoveFinderExtension'
     export FAKE_EUID=0
     export FAKE_UID=0
     export MOCK_PLUGINKIT_MODE="still_registered"
+    export PLUGINKIT_BIN="/Users/andrewezimmer/Documents/GitHub/mac-muck/tools/mock_bin/pluginkit"
     When call RemoveFinderExtension "com.vendor.extension"
     The status should eq 5
     The output should include "still registered"
     unset MOCK_PLUGINKIT_MODE
+    unset PLUGINKIT_BIN
     export FAKE_EUID=1000
     export FAKE_UID=1000
   End
@@ -115,15 +127,11 @@ Describe 'RemoveFinderExtension'
   It 'returns 1 when pluginkit is not found'
     export FAKE_EUID=0
     export FAKE_UID=0
-    local old_path="$PATH"
-    export PATH="/nonexistent:$PATH"
-    (
-      export PATH="/nonexistent:$PATH"
-      When call RemoveFinderExtension "com.vendor.extension"
-      The status should eq 1
-      The output should include "pluginkit not found"
-    )
-    export PATH="$old_path"
+    export PLUGINKIT_BIN="/nonexistent/pluginkit"
+    When call RemoveFinderExtension "com.vendor.extension"
+    The status should eq 1
+    The output should include "Missing required tool"
+    unset PLUGINKIT_BIN
     export FAKE_EUID=1000
     export FAKE_UID=1000
   End

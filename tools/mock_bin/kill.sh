@@ -44,7 +44,42 @@ case "$MOCK_KILL_MODE" in
     check_ok)
         # Simulate kill -0 succeeding (process running)
         exit 0 ;;
-    
+
+    check_ok_term_fail)
+        # Simulate kill -0 succeeding (process exists) but kill -TERM failing
+        if $is_check_mode; then
+            exit 0
+        else
+            echo "kill: operation failed" >&2
+            exit 1
+        fi ;;
+
+    term_ok_then_gone)
+        # Simulate: kill -0 first succeeds (running), kill -TERM succeeds,
+        # then kill -0 fails (process gone after TERM).
+        # Uses MOCK_KILL_COUNTER_FILE to track state.
+        if [[ -n "${MOCK_KILL_COUNTER_FILE:-}" ]]; then
+            if [[ ! -f "$MOCK_KILL_COUNTER_FILE" ]]; then
+                echo "0" > "$MOCK_KILL_COUNTER_FILE"
+            fi
+            count=$(cat "$MOCK_KILL_COUNTER_FILE" 2>/dev/null || echo "0")
+            ((count++))
+            echo "$count" > "$MOCK_KILL_COUNTER_FILE"
+            if $is_check_mode; then
+                # First kill -0: running (count=1); subsequent kill -0: gone
+                if [[ $count -le 1 ]]; then
+                    exit 0
+                else
+                    exit 1
+                fi
+            else
+                # kill -TERM: always succeed
+                exit 0
+            fi
+        fi
+        # Fallback: succeed
+        exit 0 ;;
+
     *)
         # Normal behavior - delegate to real kill
         /bin/kill "$@" ;;

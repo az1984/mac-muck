@@ -68,7 +68,7 @@ Describe 'RemovePrivilegedHelper'
     export FAKE_UID=1000
     When call RemovePrivilegedHelper "/Library/PrivilegedHelperTools/com.vendor.helper" --needs-root
     The status should eq 3
-    The output should include "Must be run as root"
+    The output should include "Needs root"
     export FAKE_EUID=0
     export FAKE_UID=0
   End
@@ -88,38 +88,49 @@ Describe 'RemovePrivilegedHelper'
 
   # --- Happy path (rc 0 when present and removed) ---
   It 'returns 0 when helper is successfully removed'
-    local test_helper="/tmp/test_helper_$$"
-    mkdir -p "/Library/PrivilegedHelperTools"
+    test_helpers_dir="${SHELLSPEC_TMPDIR}/PrivilegedHelperTools"
+    mkdir -p "$test_helpers_dir"
+    test_helper="${test_helpers_dir}/com.vendor.helper"
     touch "$test_helper"
-    # Mock SafeDelete to succeed
-    SafeDelete() { return 0; }
-    When call RemovePrivilegedHelper "$test_helper"
+    export TEST_PRIVILEGED_HELPERS_DIR="$test_helpers_dir"
+    # Mock SafeDelete to succeed and actually remove the file
+    SafeDelete() { rm -f "$1" 2>/dev/null; return 0; }
+    When call RemovePrivilegedHelper "${test_helpers_dir}/com.vendor.helper"
     The status should eq 0
-    rm -f "$test_helper"
+    unset TEST_PRIVILEGED_HELPERS_DIR
+    rm -rf "$test_helpers_dir"
   End
 
   # --- Verify-after failure (rc 5) ---
   It 'returns 5 when helper still exists after removal attempt'
-    local test_helper="/tmp/test_helper_verify_$$"
-    mkdir -p "/Library/PrivilegedHelperTools"
+    test_helpers_dir="${SHELLSPEC_TMPDIR}/PrivilegedHelperTools"
+    mkdir -p "$test_helpers_dir"
+    test_helper="${test_helpers_dir}/com.vendor.verify.helper"
     touch "$test_helper"
-    # Mock SafeDelete to succeed but path persists
+    export TEST_PRIVILEGED_HELPERS_DIR="$test_helpers_dir"
+    # Mock SafeDelete to succeed but NOT actually remove the file
     SafeDelete() { return 0; }
-    When call RemovePrivilegedHelper "$test_helper"
+    When call RemovePrivilegedHelper "${test_helpers_dir}/com.vendor.verify.helper"
     The status should eq 5
-    rm -f "$test_helper"
+    The output should include "still exists after removal"
+    unset TEST_PRIVILEGED_HELPERS_DIR
+    rm -rf "$test_helpers_dir"
   End
 
   # --- SafeDelete failure (rc 5) ---
   It 'returns 5 when SafeDelete reports failure'
-    local test_helper="/tmp/test_helper_fail_$$"
-    mkdir -p "/Library/PrivilegedHelperTools"
+    test_helpers_dir="${SHELLSPEC_TMPDIR}/PrivilegedHelperTools"
+    mkdir -p "$test_helpers_dir"
+    test_helper="${test_helpers_dir}/com.vendor.fail.helper"
     touch "$test_helper"
+    export TEST_PRIVILEGED_HELPERS_DIR="$test_helpers_dir"
     # Mock SafeDelete to fail
     SafeDelete() { return 5; }
-    When call RemovePrivilegedHelper "$test_helper"
+    When call RemovePrivilegedHelper "${test_helpers_dir}/com.vendor.fail.helper"
     The status should eq 5
-    rm -f "$test_helper"
+    The output should include "SafeDelete failed"
+    unset TEST_PRIVILEGED_HELPERS_DIR
+    rm -rf "$test_helpers_dir"
   End
 
 End

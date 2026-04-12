@@ -36,6 +36,9 @@ IdentifyLoginItemType() {
     unrecognized)
       echo "TYPE=custom_type PATH=/some/path DISPOSITION=enabled"
       return 0 ;;
+    needs_root)
+      echo "Needs root: sfltool dumpbtm requires root."
+      return 3 ;;
     fail)
       return 1 ;;
     *)
@@ -73,7 +76,7 @@ Describe 'RemoveLoginItems'
     The output should include "duplicate"
   End
 
-  It 'returns 2 when identifier format is invalid (only 2 labels)'
+  It 'returns 4 when identifier has 2 labels but is not found'
     # Note: RemoveLoginItems uses ≥2 labels validation (more permissive than other functions)
     # "com.vendor" passes validation but then fails at IdentifyLoginItemType (rc 4)
     export FAKE_EUID=0
@@ -81,6 +84,7 @@ Describe 'RemoveLoginItems'
     export MOCK_IDENTIFY_LOGIN_ITEM_MODE="not_found"
     When call RemoveLoginItems "com.vendor"
     The status should eq 4
+    The output should include "not found"
     export FAKE_EUID=1000
     export FAKE_UID=1000
   End
@@ -95,14 +99,16 @@ Describe 'RemoveLoginItems'
   # Root gate (rc 3)
   # ─────────────────────────═══════════════════════════════════════
 
-  It 'returns 3 when IdentifyLoginItemType requires root'
-    export FAKE_EUID=1000
-    export FAKE_UID=1000
-    When call RemoveLoginItems "com.test.helper" --needs-root
-    The status should eq 3
-    The output should include "Must be run as root"
+  It 'returns 1 when IdentifyLoginItemType returns rc 3 (needs root)'
     export FAKE_EUID=0
     export FAKE_UID=0
+    export MOCK_IDENTIFY_LOGIN_ITEM_MODE="needs_root"
+    When call RemoveLoginItems "com.test.helper"
+    The status should eq 1
+    The output should include "IdentifyLoginItemType failed with rc 3"
+    unset MOCK_IDENTIFY_LOGIN_ITEM_MODE
+    export FAKE_EUID=1000
+    export FAKE_UID=1000
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -157,6 +163,7 @@ Describe 'RemoveLoginItems'
     UnloadAndRemoveLaunchDaemon() { return 5; }
     When call RemoveLoginItems "com.test.daemon"
     The status should eq 5
+    The output should include "Removal failed"
     unset MOCK_IDENTIFY_LOGIN_ITEM_MODE
     export FAKE_EUID=1000
     export FAKE_UID=1000
@@ -187,6 +194,7 @@ Describe 'RemoveLoginItems'
     UnloadAndRemoveLaunchAgent() { return 5; }
     When call RemoveLoginItems "com.test.agent"
     The status should eq 5
+    The output should include "Removal failed"
     unset MOCK_IDENTIFY_LOGIN_ITEM_MODE
     export FAKE_EUID=1000
     export FAKE_UID=1000
@@ -217,6 +225,7 @@ Describe 'RemoveLoginItems'
     RemovePrivilegedHelper() { return 5; }
     When call RemoveLoginItems "com.test.helper"
     The status should eq 5
+    The output should include "Removal failed"
     unset MOCK_IDENTIFY_LOGIN_ITEM_MODE
     export FAKE_EUID=1000
     export FAKE_UID=1000
@@ -245,7 +254,7 @@ Describe 'RemoveLoginItems'
     export MOCK_IDENTIFY_LOGIN_ITEM_MODE="app_no_path"
     When call RemoveLoginItems "com.test.app"
     The status should eq 5
-    The output should include "no path"
+    The output should include "No path available"
     unset MOCK_IDENTIFY_LOGIN_ITEM_MODE
     export FAKE_EUID=1000
     export FAKE_UID=1000
@@ -259,6 +268,7 @@ Describe 'RemoveLoginItems'
     SafeRemovePath() { return 5; }
     When call RemoveLoginItems "com.test.app"
     The status should eq 5
+    The output should include "Removal failed"
     unset MOCK_IDENTIFY_LOGIN_ITEM_MODE
     export FAKE_EUID=1000
     export FAKE_UID=1000
@@ -287,7 +297,7 @@ Describe 'RemoveLoginItems'
     export MOCK_IDENTIFY_LOGIN_ITEM_MODE="login_item_no_path"
     When call RemoveLoginItems "com.test.loginitem"
     The status should eq 5
-    The output should include "no path"
+    The output should include "No path available"
     unset MOCK_IDENTIFY_LOGIN_ITEM_MODE
     export FAKE_EUID=1000
     export FAKE_UID=1000
@@ -303,7 +313,7 @@ Describe 'RemoveLoginItems'
     export MOCK_IDENTIFY_LOGIN_ITEM_MODE="unknown"
     When call RemoveLoginItems "com.test.unknown"
     The status should eq 5
-    The output should include "Unknown type"
+    The output should include "Unknown login item type"
     unset MOCK_IDENTIFY_LOGIN_ITEM_MODE
     export FAKE_EUID=1000
     export FAKE_UID=1000
@@ -315,7 +325,7 @@ Describe 'RemoveLoginItems'
     export MOCK_IDENTIFY_LOGIN_ITEM_MODE="unrecognized"
     When call RemoveLoginItems "com.test.custom"
     The status should eq 5
-    The output should include "Unknown type"
+    The output should include "Unrecognized type"
     unset MOCK_IDENTIFY_LOGIN_ITEM_MODE
     export FAKE_EUID=1000
     export FAKE_UID=1000
@@ -328,11 +338,15 @@ Describe 'RemoveLoginItems'
   It 'returns 1 when IdentifyLoginItemType function is not defined'
     export FAKE_EUID=0
     export FAKE_UID=0
-    # Temporarily remove IdentifyLoginItemType
-    local orig_IdentifyLoginItemType="$IdentifyLoginItemType"
-    unset IdentifyLoginItemType
+    # Save and remove IdentifyLoginItemType
+    eval "$(declare -f IdentifyLoginItemType | sed '1s/IdentifyLoginItemType/_saved_IdentifyLoginItemType/')"
+    unset -f IdentifyLoginItemType
     When call RemoveLoginItems "com.test.item"
     The status should eq 1
+    The output should include "Missing required function"
+    # Restore mock
+    eval "$(declare -f _saved_IdentifyLoginItemType | sed '1s/_saved_IdentifyLoginItemType/IdentifyLoginItemType/')"
+    unset -f _saved_IdentifyLoginItemType
     export FAKE_EUID=1000
     export FAKE_UID=1000
   End
@@ -343,6 +357,7 @@ Describe 'RemoveLoginItems'
     export MOCK_IDENTIFY_LOGIN_ITEM_MODE="fail"
     When call RemoveLoginItems "com.test.item"
     The status should eq 1
+    The output should include "IdentifyLoginItemType failed"
     unset MOCK_IDENTIFY_LOGIN_ITEM_MODE
     export FAKE_EUID=1000
     export FAKE_UID=1000
@@ -398,6 +413,7 @@ Describe 'RemoveLoginItems'
     }
     When call RemoveLoginItems "com.test.item"
     The status should eq 1
+    The output should include "Failed to parse TYPE"
     export FAKE_EUID=1000
     export FAKE_UID=1000
   End
@@ -425,7 +441,7 @@ Describe 'RemoveLoginItems'
     export FAKE_EUID=0
     export FAKE_UID=0
     export MOCK_IDENTIFY_LOGIN_ITEM_MODE="not_found"
-    When call RemoveLoginItems --tolerant-missing "com_test_item"
+    When call RemoveLoginItems --tolerant-missing "com.test_item"
     The status should eq 0
     unset MOCK_IDENTIFY_LOGIN_ITEM_MODE
     export FAKE_EUID=1000
@@ -436,7 +452,7 @@ Describe 'RemoveLoginItems'
     export FAKE_EUID=0
     export FAKE_UID=0
     export MOCK_IDENTIFY_LOGIN_ITEM_MODE="not_found"
-    When call RemoveLoginItems --tolerant-missing "com-test-item"
+    When call RemoveLoginItems --tolerant-missing "com.test-item"
     The status should eq 0
     unset MOCK_IDENTIFY_LOGIN_ITEM_MODE
     export FAKE_EUID=1000

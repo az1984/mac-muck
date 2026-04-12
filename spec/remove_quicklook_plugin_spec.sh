@@ -65,10 +65,10 @@ Describe 'RemoveQuickLookPlugin'
 
   # --- Happy path (rc 0 when present and removed) ---
   It 'returns 0 when plugin is successfully removed'
-    local test_plugin="/tmp/test_plugin_$$"
+    local test_plugin="/tmp/test_plugin_$$.qlgenerator"
     mkdir -p "$test_plugin"
-    # Mock SafeRemovePath to succeed
-    SafeRemovePath() { return 0; }
+    # Mock SafeRemovePath to succeed and actually remove the path
+    SafeRemovePath() { rm -rf "$1"; return 0; }
     When call RemoveQuickLookPlugin "$test_plugin"
     The status should eq 0
     rm -rf "$test_plugin"
@@ -76,23 +76,25 @@ Describe 'RemoveQuickLookPlugin'
 
   # --- Verify-after failure (rc 5) ---
   It 'returns 5 when plugin still exists after removal attempt'
-    local test_plugin="/tmp/test_plugin_verify_$$"
+    local test_plugin="/tmp/test_plugin_verify_$$.qlgenerator"
     mkdir -p "$test_plugin"
-    # Mock SafeRemovePath to succeed but path persists
+    # Mock SafeRemovePath to succeed but path persists (not actually removed)
     SafeRemovePath() { return 0; }
     When call RemoveQuickLookPlugin "$test_plugin"
     The status should eq 5
+    The output should include "still exists after removal"
     rm -rf "$test_plugin"
   End
 
   # --- SafeRemovePath failure (rc 5) ---
   It 'returns 5 when SafeRemovePath reports failure'
-    local test_plugin="/tmp/test_plugin_fail_$$"
+    local test_plugin="/tmp/test_plugin_fail_$$.qlgenerator"
     mkdir -p "$test_plugin"
     # Mock SafeRemovePath to fail
     SafeRemovePath() { return 5; }
     When call RemoveQuickLookPlugin "$test_plugin"
     The status should eq 5
+    The output should include "SafeRemovePath failed"
     rm -rf "$test_plugin"
   End
 

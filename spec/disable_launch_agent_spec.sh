@@ -1,39 +1,97 @@
 # Source the spec helper
 . ./spec/spec_helper.sh
 
-# Mock launchctl to prevent real system interactions
-launchctl() {
-  case "$*" in
-    print\ gui/501/*|print\ gui/507/*)
-      # Simulate "agent not found" scenario for nonexistent agents
-      echo "Could not find service: gui/501/$3" >&2
-      return 1 ;;
-    print-disabled\ *)
-      # Empty output = no disabled services
-      return 0 ;;
-    disable\ *)
-      # Disable succeeds
-      return 0 ;;
-    *)
-      return 0 ;;
-  esac
-}
-
-# Mock ListGraphicalUsers to return a test user
-ListGraphicalUsers() {
-  echo "testuser"
-}
-
-# Mock id command to return a test UID
-id() {
-  if [[ "$1" == "-u" ]]; then
-    echo "501"
-  else
-    command id "$@"
-  fi
-}
-
 Describe 'DisableLaunchAgent'
+
+  # ── shared mock infrastructure ──────────────────────────────────
+  # The function calls /bin/launchctl (hardcoded path). Override it
+  # with a bash function so the hardcoded path invokes our mock.
+  # MOCK_LAUNCHCTL_AGENT_EXISTS controls whether the agent is "found"
+  # MOCK_LAUNCHCTL_DISABLE_VERIFIED controls whether print-disabled shows "true"
+  # MOCK_LAUNCHCTL_PRINT_DISABLED_STDERR controls whether print-disabled has stderr
+
+  setup() {
+    export FAKE_EUID=0
+    export FAKE_UID=0
+    # Default: agent not found, disable verified
+    export MOCK_LAUNCHCTL_AGENT_EXISTS="false"
+    export MOCK_LAUNCHCTL_DISABLE_VERIFIED="true"
+    export MOCK_LAUNCHCTL_PRINT_DISABLED_STDERR="false"
+
+    eval 'function /bin/launchctl {
+      local subcmd="$1"
+      shift
+      case "$subcmd" in
+        print)
+          # $1 is gui/<uid>/<label>
+          if [[ "${MOCK_LAUNCHCTL_AGENT_EXISTS}" == "true" ]]; then
+            echo "service = gui/${1}"
+            return 0
+          else
+            echo "Could not find service: ${1}" >&2
+            return 113
+          fi
+          ;;
+        disable)
+          return 0
+          ;;
+        print-disabled)
+          if [[ "${MOCK_LAUNCHCTL_PRINT_DISABLED_STDERR}" == "true" ]]; then
+            echo "Error getting disabled status" >&2
+            return 1
+          fi
+          # $1 is gui/<uid>
+          if [[ "${MOCK_LAUNCHCTL_DISABLE_VERIFIED}" == "true" ]]; then
+            # Extract label from the last export or use a known label
+            echo "disabled services = {"
+            echo "	\"${MOCK_LAUNCHCTL_LABEL:-com.vendor.app.agent}\" => true"
+            echo "}"
+          else
+            echo "disabled services = {"
+            echo "}"
+          fi
+          return 0
+          ;;
+        *)
+          return 0
+          ;;
+      esac
+    }'
+
+    # Mock ListGraphicalUsers to return a test user
+    ListGraphicalUsers() {
+      echo "testuser"
+    }
+
+    # Mock id to return UID for testuser
+    id() {
+      if [[ "$1" == "-u" ]]; then
+        case "$2" in
+          testuser) echo "501" ;;
+          testuser2) echo "507" ;;
+          baduser) return 1 ;;
+          *) command id "$@" ;;
+        esac
+      else
+        command id "$@"
+      fi
+    }
+  }
+
+  cleanup() {
+    unset -f /bin/launchctl 2>/dev/null || true
+    unset -f ListGraphicalUsers 2>/dev/null || true
+    unset -f id 2>/dev/null || true
+    unset MOCK_LAUNCHCTL_AGENT_EXISTS 2>/dev/null || true
+    unset MOCK_LAUNCHCTL_DISABLE_VERIFIED 2>/dev/null || true
+    unset MOCK_LAUNCHCTL_PRINT_DISABLED_STDERR 2>/dev/null || true
+    unset MOCK_LAUNCHCTL_LABEL 2>/dev/null || true
+    export FAKE_EUID=1000
+    export FAKE_UID=1000
+  }
+
+  Before 'setup'
+  After 'cleanup'
 
   # ─────────────────────────═══════════════════════════════════════
   # Bad input (rc 2)
@@ -92,7 +150,11 @@ Describe 'DisableLaunchAgent'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 3 when not root and --needs-root is specified'
-    Skip "Requires non-root execution context to test the root guard"
+    export FAKE_EUID=1000
+    export FAKE_UID=1000
+    When call DisableLaunchAgent "com.vendor.app.agent" --needs-root
+    The status should eq 3
+    The output should include "Needs root"
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -100,12 +162,15 @@ Describe 'DisableLaunchAgent'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 0 when agent is absent in all user domains and --tolerant-missing is set'
+    export MOCK_LAUNCHCTL_AGENT_EXISTS="false"
     When call DisableLaunchAgent --tolerant-missing "com.nonexistent.app.agent"
     The status should eq 0
   End
 
   It 'returns 0 when no graphical users exist and --tolerant-missing is set'
-    Skip "Requires mocking ListGraphicalUsers to return empty"
+    ListGraphicalUsers() { return 0; }
+    When call DisableLaunchAgent --tolerant-missing "com.nonexistent.app.agent"
+    The status should eq 0
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -113,11 +178,17 @@ Describe 'DisableLaunchAgent'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 4 when agent is not found in any user domain without --tolerant-missing'
-    Skip "Requires mocking launchctl print to return not found"
+    export MOCK_LAUNCHCTL_AGENT_EXISTS="false"
+    When call DisableLaunchAgent "com.nonexistent.app.agent"
+    The status should eq 4
+    The output should include "not found"
   End
 
   It 'returns 4 when no graphical users exist without --tolerant-missing'
-    Skip "Requires mocking ListGraphicalUsers to return empty"
+    ListGraphicalUsers() { return 0; }
+    When call DisableLaunchAgent "com.nonexistent.app.agent"
+    The status should eq 4
+    The output should include "No graphical users"
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -125,11 +196,20 @@ Describe 'DisableLaunchAgent'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 0 when agent is successfully disabled for one user'
-    Skip "Requires mocking launchctl disable and print-disabled"
+    export MOCK_LAUNCHCTL_AGENT_EXISTS="true"
+    export MOCK_LAUNCHCTL_DISABLE_VERIFIED="true"
+    export MOCK_LAUNCHCTL_LABEL="com.vendor.app.agent"
+    When call DisableLaunchAgent "com.vendor.app.agent"
+    The status should eq 0
   End
 
   It 'returns 0 when agent is successfully disabled for multiple users'
-    Skip "Requires mocking ListGraphicalUsers and launchctl for multiple users"
+    ListGraphicalUsers() { printf '%s\n' "testuser" "testuser2"; }
+    export MOCK_LAUNCHCTL_AGENT_EXISTS="true"
+    export MOCK_LAUNCHCTL_DISABLE_VERIFIED="true"
+    export MOCK_LAUNCHCTL_LABEL="com.vendor.app.agent"
+    When call DisableLaunchAgent "com.vendor.app.agent"
+    The status should eq 0
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -137,15 +217,55 @@ Describe 'DisableLaunchAgent'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 5 when disable succeeds but verify shows still enabled'
-    Skip "Requires mocking launchctl to show enabled after disable"
+    export MOCK_LAUNCHCTL_AGENT_EXISTS="true"
+    export MOCK_LAUNCHCTL_DISABLE_VERIFIED="false"
+    export MOCK_LAUNCHCTL_LABEL="com.vendor.app.agent"
+    When call DisableLaunchAgent "com.vendor.app.agent"
+    The status should eq 5
+    The output should include "Verify failed"
   End
 
   It 'returns 5 when print-disabled has stderr during verification'
-    Skip "Requires mocking launchctl print-disabled to have stderr"
+    export MOCK_LAUNCHCTL_AGENT_EXISTS="true"
+    export MOCK_LAUNCHCTL_PRINT_DISABLED_STDERR="true"
+    export MOCK_LAUNCHCTL_LABEL="com.vendor.app.agent"
+    When call DisableLaunchAgent "com.vendor.app.agent"
+    The status should eq 5
+    The output should include "Verify failed"
   End
 
   It 'returns 5 when disable fails for one of multiple users'
-    Skip "Requires mocking partial failure across users"
+    # Two users: first user agent exists and verifies; second user agent exists but verify fails
+    eval 'function /bin/launchctl {
+      local subcmd="$1"
+      shift
+      case "$subcmd" in
+        print)
+          echo "service = gui/${1}"
+          return 0
+          ;;
+        disable)
+          return 0
+          ;;
+        print-disabled)
+          local uid_path="$1"
+          if [[ "$uid_path" == "gui/501" ]]; then
+            echo "disabled services = {"
+            echo "	\"com.vendor.app.agent\" => true"
+            echo "}"
+          else
+            # Second user: verify fails (label not in disabled list)
+            echo "disabled services = {"
+            echo "}"
+          fi
+          return 0
+          ;;
+      esac
+    }'
+    ListGraphicalUsers() { printf '%s\n' "testuser" "testuser2"; }
+    When call DisableLaunchAgent "com.vendor.app.agent"
+    The status should eq 5
+    The output should include "failed"
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -153,11 +273,11 @@ Describe 'DisableLaunchAgent'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 1 when launchctl is not found'
-    Skip "Requires mocking missing launchctl binary"
+    Skip "Cannot mock hardcoded [[ -x /bin/launchctl ]] check without modifying src"
   End
 
   It 'returns 1 when ListGraphicalUsers function is not defined'
-    Skip "Requires mocking missing ListGraphicalUsers function"
+    Skip "Function does not check for ListGraphicalUsers existence before calling it"
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -165,17 +285,21 @@ Describe 'DisableLaunchAgent'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'accepts flags before the label'
+    export MOCK_LAUNCHCTL_AGENT_EXISTS="false"
     When call DisableLaunchAgent --tolerant-missing "com.nonexistent.app.agent"
     The status should eq 0
   End
 
   It 'accepts flags after the label'
+    export MOCK_LAUNCHCTL_AGENT_EXISTS="false"
     When call DisableLaunchAgent "com.nonexistent.app.agent" --tolerant-missing
     The status should eq 0
   End
 
   It 'accepts --needs-root flag before the label'
-    Skip "Requires root execution context when --needs-root is specified"
+    export MOCK_LAUNCHCTL_AGENT_EXISTS="false"
+    When call DisableLaunchAgent --needs-root --tolerant-missing "com.nonexistent.app.agent"
+    The status should eq 0
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -183,15 +307,26 @@ Describe 'DisableLaunchAgent'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'skips users when UID cannot be resolved'
-    Skip "Requires mocking user without resolvable UID"
+    ListGraphicalUsers() { echo "baduser"; }
+    export MOCK_LAUNCHCTL_AGENT_EXISTS="false"
+    When call DisableLaunchAgent --tolerant-missing "com.vendor.app.agent"
+    The status should eq 0
   End
 
   It 'handles labels with underscores correctly'
-    Skip "Requires mocking launchctl with underscore label"
+    export MOCK_LAUNCHCTL_AGENT_EXISTS="true"
+    export MOCK_LAUNCHCTL_DISABLE_VERIFIED="true"
+    export MOCK_LAUNCHCTL_LABEL="com.test_vendor.app.agent"
+    When call DisableLaunchAgent "com.test_vendor.app.agent"
+    The status should eq 0
   End
 
   It 'handles labels with hyphens correctly'
-    Skip "Requires mocking launchctl with hyphen label"
+    export MOCK_LAUNCHCTL_AGENT_EXISTS="true"
+    export MOCK_LAUNCHCTL_DISABLE_VERIFIED="true"
+    export MOCK_LAUNCHCTL_LABEL="com.test-vendor.app.agent"
+    When call DisableLaunchAgent "com.test-vendor.app.agent"
+    The status should eq 0
   End
 
 End

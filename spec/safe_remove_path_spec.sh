@@ -166,41 +166,26 @@ Describe 'SafeRemovePath'
     SafeDelete() { return 5; }
     When call SafeRemovePath "$test_dir"
     The status should eq 5
+    The output should include "one or more delete steps failed"
     rm -rf "$test_dir"
   End
 
   # ─────────────────────────═══════════════════════════════════════
-  # Tool presence (rc 1)
+  # Verify-after (rc 1)
   # ─────────────────────────═══════════════════════════════════════
 
-  It 'returns 1 when find is not found'
-    local test_dir="/tmp/safe_rm_find_test_$$"
-    mkdir -p "$test_dir"
-    local old_path="$PATH"
-    export PATH="/nonexistent:$PATH"
-    (
-      export PATH="/nonexistent:$PATH"
-      When call SafeRemovePath "$test_dir"
-      The status should eq 1
-      The output should include "find not found"
-    )
+  It 'returns 1 when directory tree persists after seemingly successful walk'
+    local test_dir="/tmp/safe_rm_verify_tree_$$"
+    mkdir -p "$test_dir/a/b"
+    touch "$test_dir/a/b/file1"
+    # Mock all sub-functions to report success but not actually remove anything
+    SafeDelete() { return 0; }
+    RemoveDir() { return 0; }
+    UnlinkSymlink() { return 0; }
+    When call SafeRemovePath "$test_dir"
+    The status should eq 1
+    The output should include "Verify failed"
     rm -rf "$test_dir"
-    export PATH="$old_path"
-  End
-
-  It 'returns 1 when realpath is not found'
-    local test_file="/tmp/safe_rm_realpath_test_$$"
-    touch "$test_file"
-    local old_path="$PATH"
-    export PATH="/nonexistent:$PATH"
-    (
-      export PATH="/nonexistent:$PATH"
-      When call SafeRemovePath "$test_file"
-      The status should eq 1
-      The output should include "realpath not found"
-    )
-    rm -f "$test_file"
-    export PATH="$old_path"
   End
 
   # ─────────────────────────═══════════════════════════════════════

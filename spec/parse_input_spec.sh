@@ -1,17 +1,8 @@
 # Source the spec helper
 . ./spec/spec_helper.sh
 
-# Mock ParseManifestJSON for manifest mode tests
-ParseManifestJSON() {
-  local manifest_path="$1"
-  if [[ "$manifest_path" == "/valid.json" ]]; then
-    APP_NAME="ManifestApp"
-    PATHS_TO_REMOVE=("/manifest/path1" "/manifest/path2")
-    PKGS_TO_REMOVE=("com.manifest.pkg1")
-    return 0
-  fi
-  return 1
-}
+# No mock for ParseManifestJSON — use the real function sourced from spec_helper.sh
+# so that manifest-mode tests exercise the real plutil-based parsing.
 
 Describe 'ParseInput'
 
@@ -44,7 +35,7 @@ Describe 'ParseInput'
     When call ParseInput "mountpoint" "computername" "username" "jamf=true" "JamfApp" "path1|path2" "pkg1|pkg2"
     
     The status should eq 0
-    The output should be empty
+    The output should eq ""
     unset APP_NAME PATHS_TO_REMOVE PKGS_TO_REMOVE JAMF_MODE
   End
 
@@ -230,20 +221,31 @@ Describe 'ParseInput'
 
   It 'returns 2 when --manifest is specified without a path'
     When call ParseInput "--manifest"
-    
+
     The status should eq 2
+    The stderr should include "requires a path"
   End
 
   It 'returns 2 when --manifest path does not exist'
     When call ParseInput "--manifest=/nonexistent.json"
-    
+
     The status should eq 2
+    The stderr should include "does not exist"
   End
 
   It 'returns 0 when --manifest path is valid and populates arrays'
-    When call ParseInput "--manifest=/valid.json"
-    
+    local test_manifest="/tmp/test_manifest_valid_$$.json"
+    cat > "$test_manifest" << 'MEOF'
+{
+  "app_name": "ManifestApp",
+  "paths": ["/manifest/path1", "/manifest/path2"],
+  "packages": ["com.manifest.pkg1"]
+}
+MEOF
+    When call ParseInput "--manifest=$test_manifest"
+
     The status should eq 0
+    rm -f "$test_manifest"
   End
 
   # ─────────────────────────────────────────────────────────══════════════════════
@@ -262,12 +264,19 @@ Describe 'ParseInput'
   End
 
   It 'Manifest overrides CLI flags when both present'
+    local test_manifest="/tmp/test_manifest_override_$$.json"
+    cat > "$test_manifest" << 'MEOF'
+{
+  "app_name": "ManifestApp",
+  "paths": ["/manifest/path1"]
+}
+MEOF
     # Manifest mode has highest priority, so if --manifest is present, it takes precedence
-    # This is tested by checking that manifest path is validated first
-    When call ParseInput "--manifest=/valid.json" "--app-name=CLIApp"
-    
+    When call ParseInput "--manifest=$test_manifest" "--app-name=CLIApp"
+
     The status should eq 0
     # The manifest should be parsed, not the CLI flag
+    rm -f "$test_manifest"
   End
 
 End

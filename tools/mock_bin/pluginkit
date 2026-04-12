@@ -18,7 +18,20 @@
 # State tracking: uses a temp file to track call count for -m subcommand
 
 MOCK_PLUGINKIT_MODE="${MOCK_PLUGINKIT_MODE:-normal}"
-STATE_FILE="/tmp/mock_pluginkit_state_$$_${PPID}"
+
+# State file path can be set via MOCK_PLUGINKIT_STATE_FILE to ensure consistency
+# across subshell invocations ($(...)) from the same parent function call.
+STATE_FILE="${MOCK_PLUGINKIT_STATE_FILE:-/tmp/mock_pluginkit_state}"
+
+# Detect which subcommand is being invoked
+subcommand=""
+for arg in "$@"; do
+    case "$arg" in
+        -m) subcommand="match" ;;
+        -e) subcommand="election" ;;
+        -r) subcommand="remove" ;;
+    esac
+done
 
 case "$MOCK_PLUGINKIT_MODE" in
     missing)
@@ -31,49 +44,51 @@ case "$MOCK_PLUGINKIT_MODE" in
         ;;
 
     not_found)
-        # Extension is never registered — -m returns empty
+        # Extension is never registered — -m returns empty output
         # All other subcommands succeed silently
-        for arg in "$@"; do
-            if [[ "$arg" == "-m" ]]; then
-                # Return empty output (no match)
-                exit 0
-            fi
-        done
         exit 0
         ;;
 
     success)
-        # First -m call returns info (registered), second -m call returns empty (removed)
-        # -e and -r calls succeed silently
-        for arg in "$@"; do
-            if [[ "$arg" == "-m" ]]; then
-                # Check if this is the first or second -m call
+        # Stateful mock: -m returns info until -r is called, then -m returns empty
+        case "$subcommand" in
+            match)
                 if [[ -f "$STATE_FILE" ]]; then
-                    # Second call (verify-after): extension has been removed
-                    rm -f "$STATE_FILE"
+                    # Extension was removed — return empty (verify-after succeeds)
                     exit 0
                 else
-                    # First call (presence check): extension is registered
+                    # Extension is registered
                     echo "    com.vendor.extension(1.0)"
-                    touch "$STATE_FILE"
                     exit 0
                 fi
-            fi
-        done
-        # -e ignore or -r: succeed silently
-        exit 0
+                ;;
+            election)
+                # -e ignore: succeed silently
+                exit 0
+                ;;
+            remove)
+                # -r: mark extension as removed
+                touch "$STATE_FILE"
+                exit 0
+                ;;
+            *)
+                exit 0
+                ;;
+        esac
         ;;
 
     still_registered)
-        # -m always returns info (extension never gets removed)
-        # -e and -r calls appear to succeed but don't actually remove
-        for arg in "$@"; do
-            if [[ "$arg" == "-m" ]]; then
+        # -m always returns info (extension stays registered even after removal)
+        # -e and -r appear to succeed but don't change state
+        case "$subcommand" in
+            match)
                 echo "    com.vendor.extension(1.0)"
                 exit 0
-            fi
-        done
-        exit 0
+                ;;
+            *)
+                exit 0
+                ;;
+        esac
         ;;
 
     *)

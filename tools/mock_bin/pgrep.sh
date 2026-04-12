@@ -37,6 +37,26 @@ case "$MOCK_PGREP_MODE" in
         fi
         exit 1 ;;
     
+    running_then_not)
+        # Returns running on first call, not running on second and subsequent
+        # Uses MOCK_PGREP_COUNTER_FILE to track calls
+        if [[ -n "$MOCK_PGREP_COUNTER_FILE" ]]; then
+            if [[ ! -f "$MOCK_PGREP_COUNTER_FILE" ]]; then
+                echo "0" > "$MOCK_PGREP_COUNTER_FILE"
+            fi
+            count=$(cat "$MOCK_PGREP_COUNTER_FILE" 2>/dev/null || echo "0")
+            ((count++))
+            echo "$count" > "$MOCK_PGREP_COUNTER_FILE"
+            # First call: running; second+: not running
+            if [[ $count -le 1 ]]; then
+                exit 0
+            else
+                exit 1
+            fi
+        fi
+        # No counter file: just return running first time (fallback)
+        exit 0 ;;
+
     counter)
         # Use counter file for verify-after testing
         # Returns running for first N calls, then not running
@@ -47,7 +67,6 @@ case "$MOCK_PGREP_MODE" in
             fi
             
             # Read current count
-            local count
             count=$(cat "$MOCK_PGREP_COUNTER_FILE" 2>/dev/null || echo "0")
             
             # Increment counter

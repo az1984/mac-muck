@@ -70,5 +70,12 @@ fi
 # Patch hardcoded _BIN paths so tests can override them via environment variables.
 # The same ${VAR:-default} pattern used by PKGUTIL_BIN is applied to PLUGINKIT_BIN.
 eval "$(sed -n '/^ParseInput "\$@"/q; p' "$UNINSTALLER_SCRIPT" \
-  | sed 's|local PLUGINKIT_BIN="/usr/bin/pluginkit"|local PLUGINKIT_BIN="${PLUGINKIT_BIN:-/usr/bin/pluginkit}"|g'
+  | sed 's|local PLUGINKIT_BIN="/usr/bin/pluginkit"|local PLUGINKIT_BIN="${PLUGINKIT_BIN:-/usr/bin/pluginkit}"|g' \
+  | sed 's|local SFLTOOL_BIN="/usr/bin/sfltool"|local SFLTOOL_BIN="${SFLTOOL_BIN:-/usr/bin/sfltool}"|g' \
+  | sed 's|local helper_dir="/Library/PrivilegedHelperTools"|local helper_dir="${TEST_PRIVILEGED_HELPERS_DIR:-/Library/PrivilegedHelperTools}"|g' \
+  | sed 's|mapfile -t users < <( ListGraphicalUsers )|users=(); while IFS= read -r _u; do [[ -n "$_u" ]] \&\& users+=("$_u"); done < <( ListGraphicalUsers )|g' \
+  | sed 's|local sys_plist="/Library/LaunchAgents/${plist_name}"|local sys_plist="${TEST_LAUNCHAGENTS_DIR:-/Library/LaunchAgents}/${plist_name}"|g' \
+  | sed "s|/usr/bin/grep -oP 'TYPE=\\\\K\[^ \]+'|/usr/bin/sed -n 's/.*TYPE=\\\\([^ ]*\\\\).*/\\\\1/p'|g" \
+  | sed "s|/usr/bin/grep -oP 'PATH=\\\\K\[^ \]+'|/usr/bin/sed -n 's/.*PATH=\\\\([^ ]*\\\\).*/\\\\1/p'|g" \
+  | sed "s|/usr/bin/grep -oP 'DISPOSITION=\\\\K\.\*'|/usr/bin/sed -n 's/.*DISPOSITION=\\\\(.*\\\\)/\\\\1/p'|g"
 )" 2>/dev/null || true
