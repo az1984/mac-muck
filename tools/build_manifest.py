@@ -46,6 +46,8 @@ Output is deterministic (sorted keys, consistent indent) so manifests
 diff cleanly in version control.
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import os
@@ -178,40 +180,114 @@ def validate_manifest(manifest: dict) -> tuple[list[str], list[str]]:
 # Matches /Users/<username>/ — captures the relative remainder
 _PER_USER_RE = re.compile(r'^/Users/[^/]+/(.+)$')
 
+# Known per-user container directory stems (relative to ~/)
+_CONTAINER_STEMS = ("Library/Containers/", "Library/Group Containers/")
+
+
+def _extract_container_id(rel_path: str) -> str | None:
+    """If rel_path is under a Containers dir, return the bundle ID (last component)."""
+    for stem in _CONTAINER_STEMS:
+        if rel_path.startswith(stem):
+            remainder = rel_path[len(stem):]
+            # bundle ID is the first (and usually only) component after the stem
+            bundle_id = remainder.split("/")[0]
+            if bundle_id:
+                return bundle_id
+    return None
+
+
+def _extract_ql_plugin_path(rel_path: str) -> str | None:
+    """If rel_path contains a .qlgenerator bundle, return the system-level QL path."""
+    for component in rel_path.split("/"):
+        if component.endswith(".qlgenerator"):
+            return f"/Library/QuickLook/{component}"
+    return None
+
 
 def classify_paths(args: argparse.Namespace) -> None:
     """
-    Inspect --path entries and auto-route per-user paths to profile_rel_paths.
+    Inspect path-bearing args and auto-route them to the right manifest arrays.
 
-    Paths matching /Users/<name>/... are per-user artifacts. In a manifest they
-    belong in profile_rel_paths (the uninstaller iterates all user homes). This
-    function moves them out of args.path and into args.profile_path, warning on
-    stderr so the user sees what was inferred.
+    For --path: /Users/<name>/... entries are stripped to relative paths and
+    moved to profile_rel_paths.
+
+    For --container: full paths are accepted — the bundle ID is extracted from
+    the last component of the Containers directory. Per-user prefix is stripped.
+
+    For --ql-plugin: full paths are accepted — if under /Users/<name>/, the
+    .qlgenerator basename is extracted and a system-level path is inferred.
+    Per-user QL paths also get added to profile_rel_paths for per-user cleanup.
     """
-    if not args.path:
-        return
 
-    keep_paths = []
-    promoted = []
+    # ── --path: split per-user vs system paths
+    if args.path:
+        keep_paths = []
+        for p in args.path:
+            m = _PER_USER_RE.match(p)
+            if m:
+                rel = m.group(1)
+                # Check if it's actually a container
+                cid = _extract_container_id(rel)
+                if cid:
+                    if args.container is None:
+                        args.container = []
+                    args.container.append(cid)
+                    print(f"  ↳ container detected: '{p}' → containers: '{cid}'", file=sys.stderr)
+                else:
+                    if args.profile_path is None:
+                        args.profile_path = []
+                    args.profile_path.append(rel)
+                    print(f"  ↳ per-user path detected: '{p}' → profile_rel_paths: '{rel}'", file=sys.stderr)
+            else:
+                keep_paths.append(p)
+        args.path = keep_paths or None
 
-    for p in args.path:
-        m = _PER_USER_RE.match(p)
-        if m:
-            rel = m.group(1)
-            if args.profile_path is None:
-                args.profile_path = []
-            args.profile_path.append(rel)
-            promoted.append((p, rel))
-        else:
-            keep_paths.append(p)
+    # ── --container: accept full paths or bare bundle IDs
+    if args.container:
+        normalized = []
+        for c in args.container:
+            m = _PER_USER_RE.match(c)
+            if m:
+                rel = m.group(1)
+                cid = _extract_container_id(rel)
+                if cid:
+                    print(f"  ↳ container path detected: '{c}' → containers: '{cid}'", file=sys.stderr)
+                    normalized.append(cid)
+                else:
+                    # Under /Users/ but not a known container stem — use basename
+                    basename = os.path.basename(c)
+                    print(f"  ↳ container path detected: '{c}' → containers: '{basename}'", file=sys.stderr)
+                    normalized.append(basename)
+            elif c.startswith("/"):
+                # Absolute path but not under /Users/ — extract basename
+                basename = os.path.basename(c)
+                print(f"  ↳ container path detected: '{c}' → containers: '{basename}'", file=sys.stderr)
+                normalized.append(basename)
+            else:
+                # Already a bare bundle ID
+                normalized.append(c)
+        args.container = normalized
 
-    args.path = keep_paths or None
-
-    for original, rel in promoted:
-        print(
-            f"  ↳ per-user path detected: '{original}' → profile_rel_paths: '{rel}'",
-            file=sys.stderr,
-        )
+    # ── --ql-plugin: accept full paths or bare .qlgenerator names
+    if args.ql_plugin:
+        normalized = []
+        for q in args.ql_plugin:
+            m = _PER_USER_RE.match(q)
+            if m:
+                rel = m.group(1)
+                ql_path = _extract_ql_plugin_path(rel)
+                if ql_path:
+                    print(f"  ↳ per-user QL plugin: '{q}' → quicklook_plugins: '{ql_path}'", file=sys.stderr)
+                    normalized.append(ql_path)
+                else:
+                    # Not a .qlgenerator — treat the relative path as a profile artifact
+                    if args.profile_path is None:
+                        args.profile_path = []
+                    args.profile_path.append(rel)
+                    print(f"  ↳ per-user QL artifact: '{q}' → profile_rel_paths: '{rel}'", file=sys.stderr)
+            else:
+                normalized.append(q)
+        args.ql_plugin = normalized or None
 
 
 # ──────────────────────────────────────────────────────────────────────────────

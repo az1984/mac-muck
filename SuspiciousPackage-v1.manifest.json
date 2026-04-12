@@ -1,0 +1,15 @@
+{
+  "app_name": "SuspiciousPackage",
+  "apps_to_quit": [
+    "/Applications/Suspicious Package.app"
+  ],
+  "paths": [
+    "/Applications/Suspicious Package.app"
+  ],
+  "profile_rel_paths": [
+    "Library/Application Scripts/com.mothersruin.SuspiciousPackageApp.QLPreview"
+  ],
+  "containers": [
+    "com.mothersruin.SuspiciousPackageApp.QLPreview"
+  ]
+}

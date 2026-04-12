@@ -1,0 +1,7 @@
+andrewezimmer@AppleViMachine1 mac-muck % ./tools/build_manifest.py --app-name SuspiciousPackage --path /Applications/Suspicious\ Package.app --ql-plugin /Users/andrewezimmer/Library/Application\ Scripts/com.mothersruin.SuspiciousPackageApp.QLPreview --container /Users/andrewezimmer/Library/Containers/com.mothersruin.SuspiciousPackageApp.QLPreview   --quit /Applications/Suspicious\ Package.app --output SuspiciousPackage-v1.manifest.txt  | pbcopy
+
+✖  Errors (2):
+   containers[0]: '/Users/andrewezimmer/Library/Containers/com.mothersruin.SuspiciousPackageApp.QLPreview' is not valid reverse-DNS format (need ≥3 dot-separated labels, e.g., com.vendor.app)
+   containers[0]: '/Users/andrewezimmer/Library/Containers/com.mothersruin.SuspiciousPackageApp.QLPreview' contains forbidden characters
+
+Manifest NOT written due to errors.
