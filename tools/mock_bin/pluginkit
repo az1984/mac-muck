@@ -1,0 +1,83 @@
+#!/bin/bash
+# pluginkit mock - behavior controlled by MOCK_PLUGINKIT_MODE
+#
+# This mock simulates pluginkit behavior for testing RemoveFinderExtension.
+# The function calls pluginkit multiple times per invocation:
+#   1. pluginkit -m -i <bundle_id>   (presence check — should return info if registered)
+#   2. pluginkit -e ignore -i <id>   (disable extension)
+#   3. pluginkit -r -i <id>          (remove registration)
+#   4. pluginkit -m -i <bundle_id>   (verify-after — should return empty if removed)
+#
+# Available modes (set via MOCK_PLUGINKIT_MODE):
+#   not_found:        -m always returns empty (extension not registered)
+#   success:          -m returns info on first call, empty on verify-after; -e and -r succeed
+#   still_registered: -m always returns info (extension stays registered after removal)
+#   missing:          exit 127 (simulate command not found)
+#   fail:             exit 1 (generic failure)
+#
+# State tracking: uses a temp file to track call count for -m subcommand
+
+MOCK_PLUGINKIT_MODE="${MOCK_PLUGINKIT_MODE:-normal}"
+STATE_FILE="/tmp/mock_pluginkit_state_$$_${PPID}"
+
+case "$MOCK_PLUGINKIT_MODE" in
+    missing)
+        exit 127
+        ;;
+
+    fail)
+        echo "pluginkit: operation failed" >&2
+        exit 1
+        ;;
+
+    not_found)
+        # Extension is never registered — -m returns empty
+        # All other subcommands succeed silently
+        for arg in "$@"; do
+            if [[ "$arg" == "-m" ]]; then
+                # Return empty output (no match)
+                exit 0
+            fi
+        done
+        exit 0
+        ;;
+
+    success)
+        # First -m call returns info (registered), second -m call returns empty (removed)
+        # -e and -r calls succeed silently
+        for arg in "$@"; do
+            if [[ "$arg" == "-m" ]]; then
+                # Check if this is the first or second -m call
+                if [[ -f "$STATE_FILE" ]]; then
+                    # Second call (verify-after): extension has been removed
+                    rm -f "$STATE_FILE"
+                    exit 0
+                else
+                    # First call (presence check): extension is registered
+                    echo "    com.vendor.extension(1.0)"
+                    touch "$STATE_FILE"
+                    exit 0
+                fi
+            fi
+        done
+        # -e ignore or -r: succeed silently
+        exit 0
+        ;;
+
+    still_registered)
+        # -m always returns info (extension never gets removed)
+        # -e and -r calls appear to succeed but don't actually remove
+        for arg in "$@"; do
+            if [[ "$arg" == "-m" ]]; then
+                echo "    com.vendor.extension(1.0)"
+                exit 0
+            fi
+        done
+        exit 0
+        ;;
+
+    *)
+        # Normal behavior - delegate to real pluginkit
+        /usr/bin/pluginkit "$@"
+        ;;
+esac
