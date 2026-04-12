@@ -28,7 +28,13 @@ Describe 'ParseManifestJSON'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 1 if plutil binary is missing'
-    Skip "plutil path is hardcoded in function; cannot override via PATH in test environment"
+    export PLUTIL_BIN="/nonexistent/plutil"
+    local test_json="/tmp/test_manifest_plutil_missing_$$"
+    echo '{"app_name": "Test"}' > "$test_json"
+    When call ParseManifestJSON "$test_json"
+    The status should eq 1
+    The output should include "Missing required tool"
+    rm -f "$test_json"
   End
 
   # ─────────────────────────═══════════════════════════════════════

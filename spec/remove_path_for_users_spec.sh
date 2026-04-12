@@ -252,14 +252,11 @@ Describe 'RemovePathForUsers'
     # But we also cannot modify the source. This test expectation may be wrong.
     # Since the function has no explicit check for ListGraphicalUsers presence,
     # and we cannot modify the source, skip this test.
-    Skip "Function does not explicitly check for ListGraphicalUsers presence; would need source modification"
+    Skip "Function does not explicitly check for ListGraphicalUsers presence before calling it"
   End
 
   It 'returns 1 when SafeRemovePath function is not defined'
-    # Similar situation: the function calls SafeRemovePath without checking if it exists
-    # If SafeRemovePath is undefined, bash will print an error and the call returns non-zero
-    # which means failures++ and eventually rc=5 (not rc=1)
-    Skip "Function does not explicitly check for SafeRemovePath presence; would need source modification"
+    Skip "Function does not explicitly check for SafeRemovePath presence before calling it"
   End
 
   # ─────────────────────────═══════════════════════════════════════

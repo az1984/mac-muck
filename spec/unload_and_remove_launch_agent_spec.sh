@@ -239,19 +239,22 @@ Describe 'UnloadAndRemoveLaunchAgent'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 1 when launchctl is not found'
-    Skip "Cannot mock hardcoded [[ -x /bin/launchctl ]] check without modifying src"
+    export LAUNCHCTL_BIN="/nonexistent/launchctl"
+    When call UnloadAndRemoveLaunchAgent "com.vendor.app.agent"
+    The status should eq 1
+    The output should include "Missing required tool"
   End
 
   It 'returns 1 when ListGraphicalUsers function is not defined'
-    Skip "Function does not check for ListGraphicalUsers existence before calling it"
+    Skip "Function does not explicitly check for ListGraphicalUsers presence before calling it"
   End
 
   It 'returns 1 when VerifyServiceUnloaded function is not defined'
-    Skip "Function does not check for VerifyServiceUnloaded existence before calling it"
+    Skip "Function does not explicitly check for VerifyServiceUnloaded presence before calling it"
   End
 
   It 'returns 1 when SafeDelete function is not defined'
-    Skip "Function does not check for SafeDelete existence before calling it"
+    Skip "Function does not explicitly check for SafeDelete presence before calling it"
   End
 
   # ─────────────────────────═══════════════════════════════════════

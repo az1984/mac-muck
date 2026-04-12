@@ -77,5 +77,8 @@ eval "$(sed -n '/^ParseInput "\$@"/q; p' "$UNINSTALLER_SCRIPT" \
   | sed 's|local sys_plist="/Library/LaunchAgents/${plist_name}"|local sys_plist="${TEST_LAUNCHAGENTS_DIR:-/Library/LaunchAgents}/${plist_name}"|g' \
   | sed "s|/usr/bin/grep -oP 'TYPE=\\\\K\[^ \]+'|/usr/bin/sed -n 's/.*TYPE=\\\\([^ ]*\\\\).*/\\\\1/p'|g" \
   | sed "s|/usr/bin/grep -oP 'PATH=\\\\K\[^ \]+'|/usr/bin/sed -n 's/.*PATH=\\\\([^ ]*\\\\).*/\\\\1/p'|g" \
-  | sed "s|/usr/bin/grep -oP 'DISPOSITION=\\\\K\.\*'|/usr/bin/sed -n 's/.*DISPOSITION=\\\\(.*\\\\)/\\\\1/p'|g"
+  | sed "s|/usr/bin/grep -oP 'DISPOSITION=\\\\K\.\*'|/usr/bin/sed -n 's/.*DISPOSITION=\\\\(.*\\\\)/\\\\1/p'|g" \
+  | sed 's|local LAUNCHCTL_BIN="/bin/launchctl"|local LAUNCHCTL_BIN="${LAUNCHCTL_BIN:-/bin/launchctl}"|g' \
+  | sed 's|local PLUTIL_BIN="/usr/bin/plutil"|local PLUTIL_BIN="${PLUTIL_BIN:-/usr/bin/plutil}"|g' \
+  | sed 's|local UNLINK_BIN="/usr/bin/unlink"|local UNLINK_BIN="${UNLINK_BIN:-/usr/bin/unlink}"|g'
 )" 2>/dev/null || true

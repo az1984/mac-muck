@@ -113,18 +113,10 @@ Describe 'VerifyServiceUnloaded'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 3 when launchctl is not found'
-    # The function checks [[ ! -x "/bin/launchctl" ]] which always passes on
-    # macOS since /bin/launchctl exists. This test validates behavior when
-    # the binary is absent. We simulate by temporarily making the function
-    # check fail via a shell function that wraps the test call.
-    launchctl_missing_test() {
-      # Temporarily rename the check by overriding the function to also
-      # make [[ ! -x ... ]] fail. We redefine VerifyServiceUnloaded inline
-      # with a patched tool-check.
-      # Since we cannot modify the source, we skip this on real macOS.
-      VerifyServiceUnloaded "com.test.service"
-    }
-    Skip "Cannot test missing /bin/launchctl on macOS where it always exists"
+    export LAUNCHCTL_BIN="/nonexistent/launchctl"
+    When call VerifyServiceUnloaded "com.test.service"
+    The status should eq 3
+    The output should include "Missing required tool"
   End
 
   # ─────────────────────────═══════════════════════════════════════

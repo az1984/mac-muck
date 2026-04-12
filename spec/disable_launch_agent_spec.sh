@@ -273,11 +273,14 @@ Describe 'DisableLaunchAgent'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 1 when launchctl is not found'
-    Skip "Cannot mock hardcoded [[ -x /bin/launchctl ]] check without modifying src"
+    export LAUNCHCTL_BIN="/nonexistent/launchctl"
+    When call DisableLaunchAgent "com.vendor.app.agent"
+    The status should eq 1
+    The output should include "Missing required tool"
   End
 
   It 'returns 1 when ListGraphicalUsers function is not defined'
-    Skip "Function does not check for ListGraphicalUsers existence before calling it"
+    Skip "Function does not explicitly check for ListGraphicalUsers presence before calling it"
   End
 
   # ─────────────────────────═══════════════════════════════════════

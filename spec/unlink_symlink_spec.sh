@@ -126,7 +126,7 @@ Describe 'UnlinkSymlink'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 1 when unlink is not found'
-    Skip "Function uses hardcoded /usr/bin/unlink without a tool-presence check; needs source fix to add [[ ! -x UNLINK_BIN ]] gate"
+    Skip "Function has no explicit [[ ! -x UNLINK_BIN ]] tool-presence check; falls back to rm -f instead of returning rc 1"
   End
 
   # ─────────────────────────═══════════════════════════════════════
