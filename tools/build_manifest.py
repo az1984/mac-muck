@@ -107,6 +107,14 @@ def validate_rdns_id(identifier: str, field_name: str) -> tuple[list[str], list[
     return errors, warnings
 
 
+def validate_ql_plugin_entry(entry: str, field_name: str) -> tuple[list[str], list[str]]:
+    """Validate a quicklook_plugins entry — either an absolute path or a bundle ID."""
+    if entry.startswith("/"):
+        return validate_absolute_path(entry, field_name)
+    else:
+        return validate_rdns_id(entry, field_name)
+
+
 def validate_manifest(manifest: dict) -> tuple[list[str], list[str]]:
     """
     Validate a complete manifest dict.
@@ -138,7 +146,7 @@ def validate_manifest(manifest: dict) -> tuple[list[str], list[str]]:
         "launch_agents":      ("agent label",    validate_rdns_id),
         "launch_daemons":     ("daemon label",   validate_rdns_id),
         "finder_extensions":  ("extension id",   validate_rdns_id),
-        "quicklook_plugins":  ("ql plugin path", validate_absolute_path),
+        "quicklook_plugins":  ("ql plugin",      validate_ql_plugin_entry),
         "privileged_helpers": ("helper path",    validate_absolute_path),
         "login_items":        ("login item id",  validate_rdns_id),
         "containers":         ("container id",   validate_rdns_id),
@@ -201,6 +209,36 @@ def _extract_ql_plugin_path(rel_path: str) -> str | None:
     for component in rel_path.split("/"):
         if component.endswith(".qlgenerator"):
             return f"/Library/QuickLook/{component}"
+    return None
+
+
+def _probe_ql_extension(candidate: str) -> str | None:
+    """
+    Given a path or bundle-ID-like string, check if it corresponds to a
+    registered QuickLook preview extension via pluginkit.
+
+    Returns the bundle ID if confirmed as a QL extension, None otherwise.
+    """
+    import subprocess
+
+    # Extract a bundle-ID-like string: last path component, no trailing slash
+    probe_id = os.path.basename(candidate.rstrip("/"))
+
+    # Must look like a reverse-DNS identifier (at least two dots)
+    if probe_id.count(".") < 2:
+        return None
+
+    try:
+        result = subprocess.run(
+            ["pluginkit", "-m", "-p", "com.apple.quicklook.preview", "-i", probe_id],
+            capture_output=True, text=True, timeout=5,
+        )
+        # pluginkit prints the bundle ID line if it matches, empty if not
+        if probe_id in result.stdout:
+            return probe_id
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+
     return None
 
 
@@ -268,7 +306,8 @@ def classify_paths(args: argparse.Namespace) -> None:
                 normalized.append(c)
         args.container = normalized
 
-    # ── --ql-plugin: accept full paths or bare .qlgenerator names
+    # ── --ql-plugin: accept .qlgenerator paths, full user paths, or bundle IDs
+    #    Uses pluginkit to verify non-obvious candidates are real QL extensions.
     if args.ql_plugin:
         normalized = []
         for q in args.ql_plugin:
@@ -277,16 +316,33 @@ def classify_paths(args: argparse.Namespace) -> None:
                 rel = m.group(1)
                 ql_path = _extract_ql_plugin_path(rel)
                 if ql_path:
+                    # Legacy .qlgenerator under a user dir — promote to system path
                     print(f"  ↳ per-user QL plugin: '{q}' → quicklook_plugins: '{ql_path}'", file=sys.stderr)
                     normalized.append(ql_path)
                 else:
-                    # Not a .qlgenerator — treat the relative path as a profile artifact
-                    if args.profile_path is None:
-                        args.profile_path = []
-                    args.profile_path.append(rel)
-                    print(f"  ↳ per-user QL artifact: '{q}' → profile_rel_paths: '{rel}'", file=sys.stderr)
-            else:
+                    # Not a .qlgenerator — probe pluginkit to see if it's a QL extension
+                    confirmed_id = _probe_ql_extension(q)
+                    if confirmed_id:
+                        print(f"  ↳ QL extension confirmed via pluginkit: '{q}' → quicklook_plugins (id: '{confirmed_id}')", file=sys.stderr)
+                        normalized.append(confirmed_id)
+                    else:
+                        # Genuinely not a QL plugin — route as per-user artifact
+                        if args.profile_path is None:
+                            args.profile_path = []
+                        args.profile_path.append(rel)
+                        print(f"  ↳ not a QL extension (pluginkit says no): '{q}' → profile_rel_paths: '{rel}'", file=sys.stderr)
+            elif q.endswith(".qlgenerator") or q.startswith("/"):
+                # System-level .qlgenerator path or other absolute path — keep as-is
                 normalized.append(q)
+            else:
+                # Bare string — could be a bundle ID, verify with pluginkit
+                confirmed_id = _probe_ql_extension(q)
+                if confirmed_id:
+                    print(f"  ↳ QL extension confirmed via pluginkit: '{q}'", file=sys.stderr)
+                    normalized.append(confirmed_id)
+                else:
+                    print(f"  WARNING: '{q}' not recognized as a QL extension by pluginkit", file=sys.stderr)
+                    normalized.append(q)  # pass through anyway, let validator catch it
         args.ql_plugin = normalized or None
 
 
