@@ -1019,6 +1019,16 @@ RemovePathForUsers() {
     return 2
   fi
 
+  # -------- dependency presence --------
+  if ! type -t ListGraphicalUsers >/dev/null 2>&1; then
+    echo "${my_echo_prefix}${my_err_prefix}Missing dependency: ListGraphicalUsers"
+    return 1
+  fi
+  if ! type -t SafeRemovePath >/dev/null 2>&1; then
+    echo "${my_echo_prefix}${my_err_prefix}Missing dependency: SafeRemovePath"
+    return 1
+  fi
+
   # -------- user discovery (if none provided) --------
   if (( ${#users[@]} == 0 )); then
     mapfile -t users < <( ListGraphicalUsers )
@@ -1668,6 +1678,12 @@ DisableLaunchAgent() {
     return 2
   fi
 
+  # --- dependency presence ---
+  if ! type -t ListGraphicalUsers >/dev/null 2>&1; then
+    echo "${my_echo_prefix}${my_err_prefix}Missing dependency: ListGraphicalUsers"
+    return 1
+  fi
+
   # --- discover graphical users ---
   local -a users=()
   mapfile -t users < <( ListGraphicalUsers )
@@ -2035,6 +2051,20 @@ UnloadAndRemoveLaunchAgent() {
   if [[ ! "$label" =~ $id_re ]]; then
     echo "${my_echo_prefix}${my_err_prefix}Invalid label format: $label"
     return 2
+  fi
+
+  # --- dependency presence ---
+  if ! type -t ListGraphicalUsers >/dev/null 2>&1; then
+    echo "${my_echo_prefix}${my_err_prefix}Missing dependency: ListGraphicalUsers"
+    return 1
+  fi
+  if ! type -t VerifyServiceUnloaded >/dev/null 2>&1; then
+    echo "${my_echo_prefix}${my_err_prefix}Missing dependency: VerifyServiceUnloaded"
+    return 1
+  fi
+  if ! type -t SafeDelete >/dev/null 2>&1; then
+    echo "${my_echo_prefix}${my_err_prefix}Missing dependency: SafeDelete"
+    return 1
   fi
 
   local plist_name="${label}.plist"

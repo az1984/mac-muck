@@ -246,15 +246,24 @@ Describe 'UnloadAndRemoveLaunchAgent'
   End
 
   It 'returns 1 when ListGraphicalUsers function is not defined'
-    Skip "Function does not explicitly check for ListGraphicalUsers presence before calling it"
+    unset -f ListGraphicalUsers
+    When call UnloadAndRemoveLaunchAgent "com.vendor.app.agent"
+    The status should eq 1
+    The output should include "Missing dependency"
   End
 
   It 'returns 1 when VerifyServiceUnloaded function is not defined'
-    Skip "Function does not explicitly check for VerifyServiceUnloaded presence before calling it"
+    unset -f VerifyServiceUnloaded
+    When call UnloadAndRemoveLaunchAgent "com.vendor.app.agent"
+    The status should eq 1
+    The output should include "Missing dependency"
   End
 
   It 'returns 1 when SafeDelete function is not defined'
-    Skip "Function does not explicitly check for SafeDelete presence before calling it"
+    unset -f SafeDelete
+    When call UnloadAndRemoveLaunchAgent "com.vendor.app.agent"
+    The status should eq 1
+    The output should include "Missing dependency"
   End
 
   # ─────────────────────────═══════════════════════════════════════

@@ -125,8 +125,17 @@ Describe 'UnlinkSymlink'
   # Tool presence (rc 1)
   # ─────────────────────────═══════════════════════════════════════
 
-  It 'returns 1 when unlink is not found'
-    Skip "Function has no explicit [[ ! -x UNLINK_BIN ]] tool-presence check; falls back to rm -f instead of returning rc 1"
+  It 'falls back to rm -f and succeeds when unlink is not found'
+    local test_target="/tmp/unlink_fallback_target_$$"
+    local test_symlink="/tmp/unlink_fallback_link_$$"
+    echo "data" > "$test_target"
+    ln -sf "$test_target" "$test_symlink"
+    export UNLINK_BIN="/nonexistent/unlink"
+    When call UnlinkSymlink "$test_symlink"
+    The status should eq 0
+    The path "$test_symlink" should not be exist
+    unset UNLINK_BIN
+    rm -f "$test_target"
   End
 
   # ─────────────────────────═══════════════════════════════════════

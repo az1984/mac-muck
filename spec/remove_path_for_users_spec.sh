@@ -241,22 +241,17 @@ Describe 'RemovePathForUsers'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 1 when ListGraphicalUsers function is not defined'
-    # Undefine ListGraphicalUsers and call without explicit users
-    # This will trigger mapfile -t users < <( ListGraphicalUsers )
-    # If ListGraphicalUsers is not defined, the command substitution fails
-    # But the function does not explicitly check for ListGraphicalUsers presence
-    # It just calls it; if undefined, bash will error and mapfile gets empty input
-    # The function will then iterate over zero users and return 0
-    # So rc=1 is not actually what happens -- it returns 0 with no work done
-    # Per the rules: "the test is the authority on what the function SHOULD do"
-    # But we also cannot modify the source. This test expectation may be wrong.
-    # Since the function has no explicit check for ListGraphicalUsers presence,
-    # and we cannot modify the source, skip this test.
-    Skip "Function does not explicitly check for ListGraphicalUsers presence before calling it"
+    unset -f ListGraphicalUsers
+    When call RemovePathForUsers "Library/TestPath"
+    The status should eq 1
+    The output should include "Missing dependency"
   End
 
   It 'returns 1 when SafeRemovePath function is not defined'
-    Skip "Function does not explicitly check for SafeRemovePath presence before calling it"
+    unset -f SafeRemovePath
+    When call RemovePathForUsers "Library/TestPath"
+    The status should eq 1
+    The output should include "Missing dependency"
   End
 
   # ─────────────────────────═══════════════════════════════════════

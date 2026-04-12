@@ -82,8 +82,8 @@ This document is the **authoritative test specification**. Each checkbox is a si
 - [x] Mock pkill succeeds but pgrep still returns 0 (process alive) → rc 5
 
 ### Tool presence (rc 1)
-- [ ] pgrep not found → rc 1
-- [ ] pkill not found → rc 1
+- [x] pgrep not found → rc 1
+- [x] pkill not found → rc 1
 
 ---
 
