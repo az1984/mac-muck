@@ -63,6 +63,8 @@ fi
 # The uninstaller checks for root in main(), so with FAKE_EUID=1000 it will exit 3.
 # We prevent this by overriding the exit command in a subshell.
 
-# Source the script - functions will be available, but ParseInput and main
-# will run with no arguments (safe no-ops in this context)
-. "$UNINSTALLER_SCRIPT" 2>/dev/null || true
+# Source the script excluding the final invocation lines (ParseInput "$@"
+# and main "$@") so that functions are defined but not executed.
+# main() uses `id -u` (not _get_effective_euid) and calls `exit 3` when
+# not root, which would terminate the sourcing shell entirely.
+eval "$(sed -n '/^ParseInput "\$@"/q; p' "$UNINSTALLER_SCRIPT")" 2>/dev/null || true
