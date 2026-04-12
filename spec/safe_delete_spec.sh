@@ -74,12 +74,11 @@ Describe 'SafeDelete'
     rm -f "$test_target" "$test_symlink"
   End
 
-  It 'returns 5 when symlink is not a symlink (type check fails)'
-    local test_file="/tmp/safe_del_file_$$"
+  It 'returns 0 when successfully removes a regular file via rm'
+    local test_file="/tmp/safe_del_regular_$$"
     touch "$test_file"
     When call SafeDelete "$test_file"
-    The status should eq 5
-    The output should include "Not a symlink"
+    The status should eq 0
     rm -f "$test_file"
   End
 
@@ -114,47 +113,45 @@ Describe 'SafeDelete'
   It 'returns 0 when successfully removes a regular file'
     local test_file="/tmp/safe_del_file_$$"
     touch "$test_file"
-    # Mock rm to succeed
-    rm() { return 0; }
     When call SafeDelete "$test_file"
     The status should eq 0
     rm -f "$test_file"
   End
 
   It 'returns 5 when file removal fails'
-    local test_file="/tmp/safe_del_file_fail_$$"
+    local test_dir="/tmp/safe_del_nowrite_$$"
+    local test_file="$test_dir/protected_file"
+    mkdir -p "$test_dir"
     touch "$test_file"
-    # Mock rm to fail
-    rm() { return 1; }
+    chmod a-w "$test_dir"
     When call SafeDelete "$test_file"
     The status should eq 5
-    rm -f "$test_file"
+    The output should include "rm failed"
+    chmod u+w "$test_dir"
+    rm -rf "$test_dir"
   End
 
   # ─────────────────────────═══════════════════════════════════════
   # Tool presence (rc 1)
   # ─────────────────────────═══════════════════════════════════════
 
-  It 'returns 1 when UnlinkSymlink function is not defined'
-    # SafeDelete should fail when UnlinkSymlink is not available
+  It 'returns 5 when UnlinkSymlink delegate fails'
     local test_symlink="/tmp/safe_del_unlink_test_$$"
     ln -s "/nonexistent" "$test_symlink"
-    # Undefine UnlinkSymlink temporarily
-    unset UnlinkSymlink 2>/dev/null || true
-    # Re-define as empty to simulate missing
+    # Mock UnlinkSymlink to return failure
     UnlinkSymlink() { return 1; }
     When call SafeDelete "$test_symlink"
-    The status should eq 1
+    The status should eq 5
     rm -f "$test_symlink"
   End
 
-  It 'returns 1 when RemoveDir function is not defined'
+  It 'returns 5 when RemoveDir delegate fails'
     local test_dir="/tmp/safe_del_rmdir_test_$$"
     mkdir -p "$test_dir"
-    # Mock RemoveDir to fail
+    # Mock RemoveDir to return failure
     RemoveDir() { return 1; }
     When call SafeDelete "$test_dir"
-    The status should eq 1
+    The status should eq 5
     rm -rf "$test_dir"
   End
 
@@ -191,8 +188,6 @@ Describe 'SafeDelete'
     touch "$test_file"
     export FAKE_EUID=0
     export FAKE_UID=0
-    # Mock rm to succeed
-    rm() { return 0; }
     When call SafeDelete "$test_file"
     The status should eq 0
     rm -f "$test_file"

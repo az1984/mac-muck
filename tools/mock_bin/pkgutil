@@ -17,9 +17,13 @@
 
 STATE_FILE="/tmp/pkgutil_state"
 
-# If mode is set in environment, update state file with fresh state
+# If mode is set in environment, initialize state file ONLY if it doesn't exist.
+# The state file tracks call count across multiple invocations within a single
+# function call. Tests must remove /tmp/pkgutil_state before each test to reset.
 if [[ -n "${MOCK_PKGUTIL_MODE:-}" ]]; then
-    printf "%s\n0\n" "${MOCK_PKGUTIL_MODE}" > "$STATE_FILE"
+    if [[ ! -f "$STATE_FILE" ]]; then
+        printf "%s\n0\n" "${MOCK_PKGUTIL_MODE}" > "$STATE_FILE"
+    fi
 fi
 
 # Read mode from state file (default: normal)

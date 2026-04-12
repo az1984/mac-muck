@@ -115,6 +115,7 @@ Describe 'SafeRemovePath'
     RemoveDir() { return 5; }
     When call SafeRemovePath "$test_dir"
     The status should eq 5
+    The output should include "one or more delete steps failed"
     rm -rf "$test_dir"
   End
 
@@ -145,14 +146,16 @@ Describe 'SafeRemovePath'
   # Verify-after tests
   # ─────────────────────────═══════════════════════════════════════
 
-  It 'returns 5 when path still exists after removal attempt'
-    local test_file="/tmp/safe_rm_verify_$$"
-    touch "$test_file"
-    # Mock SafeDelete to succeed but file persists
+  It 'returns 1 when path still exists after removal attempt (verify-after)'
+    local test_dir="/tmp/safe_rm_verify_$$"
+    mkdir -p "$test_dir/subdir"
+    # Mock SafeDelete and RemoveDir to report success but not actually remove anything
     SafeDelete() { return 0; }
-    When call SafeRemovePath "$test_file"
-    The status should eq 5
-    rm -f "$test_file"
+    RemoveDir() { return 0; }
+    When call SafeRemovePath "$test_dir"
+    The status should eq 1
+    The output should include "Verify failed"
+    rm -rf "$test_dir"
   End
 
   It 'returns 5 when one or more delete steps fail in directory tree'

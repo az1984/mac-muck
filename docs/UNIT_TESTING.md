@@ -20,41 +20,41 @@ This document is the **authoritative test specification**. Each checkbox is a si
 ## ForgetPackage — `spec/forget_package_spec.sh`
 
 ### Bad input (rc 2)
-- [ ] No arguments → rc 2, output includes "Bad input"
-- [ ] Single-label id (e.g., `"notreverse"`) → rc 2, output includes "Invalid"
-- [ ] Two-label id (e.g., `"com.vendor"`) → rc 2, output includes "Invalid"
-- [ ] Id starting with number (e.g., `"1com.vendor.app"`) → rc 2, output includes "Invalid"
-- [ ] Duplicate `--tolerant-missing` flag → rc 2, output includes "duplicate"
-- [ ] Unknown flag `--bogus` → rc 2, output includes "unknown flag"
-- [ ] Internal anchors (e.g., `"com.vendor^.app"`) → rc 2, output includes "anchors"
-- [ ] Trailing space in id → rc 2, output includes "Invalid"
-- [ ] Leading space in id → rc 2, output includes "Invalid"
+- [x] No arguments → rc 2, output includes "Bad input"
+- [x] Single-label id (e.g., `"notreverse"`) → rc 2, output includes "Invalid"
+- [x] Two-label id (e.g., `"com.vendor"`) → rc 2, output includes "Invalid"
+- [x] Id starting with number (e.g., `"1com.vendor.app"`) → rc 2, output includes "Invalid"
+- [x] Duplicate `--tolerant-missing` flag → rc 2, output includes "duplicate"
+- [x] Unknown flag `--bogus` → rc 2, output includes "unknown flag"
+- [x] Internal anchors (e.g., `"com.vendor^.app"`) → rc 2, output includes "anchors"
+- [x] Trailing space in id → rc 2, output includes "Invalid"
+- [x] Leading space in id → rc 2, output includes "Invalid"
 
 ### Root check (rc 3)
-- [ ] FAKE_EUID=1000, valid id → rc 3, output includes "root"
+- [x] FAKE_EUID=1000, valid id → rc 3, output includes "root"
 
 ### Tolerant missing (rc 0)
-- [ ] FAKE_EUID=0, mock pkgutil --pkg-info fails, `--tolerant-missing` → rc 0
+- [x] FAKE_EUID=0, mock pkgutil --pkg-info fails, `--tolerant-missing` → rc 0
 
 ### Strict missing (rc 4)
-- [ ] FAKE_EUID=0, mock pkgutil --pkg-info fails, no tolerance flag → rc 4, output includes "not present"
+- [x] FAKE_EUID=0, mock pkgutil --pkg-info fails, no tolerance flag → rc 4, output includes "not present"
 
 ### Happy path (rc 0)
-- [ ] FAKE_EUID=0, mock pkgutil --pkg-info succeeds then --forget succeeds then --pkg-info fails (gone) → rc 0
-- [ ] Anchored format `"^com.vendor.app$"` → rc 0 (anchors normalized)
-- [ ] Leading `^` only → rc 0
-- [ ] Trailing `$` only → rc 0
+- [x] FAKE_EUID=0, mock pkgutil --pkg-info succeeds then --forget succeeds then --pkg-info fails (gone) → rc 0
+- [x] Anchored format `"^com.vendor.app$"` → rc 0 (anchors normalized)
+- [x] Leading `^` only → rc 0
+- [x] Trailing `$` only → rc 0
 
 ### Verify-after failure (rc 5)
-- [ ] Mock --forget succeeds but --pkg-info still succeeds afterward (receipt persists) → rc 5, output includes "still present"
-- [ ] Mock --forget fails → rc 5
+- [x] Mock --forget succeeds but --pkg-info still succeeds afterward (receipt persists) → rc 5, output includes "still present"
+- [x] Mock --forget fails → rc 5
 
 ### Tool presence (rc 1)
-- [ ] pkgutil binary not found at expected path → rc 1, output includes "Missing required tool"
+- [x] pkgutil binary not found at expected path → rc 1, output includes "Missing required tool"
 
 ### Order-agnostic args
-- [ ] `--tolerant-missing` before id → rc 0 (same as after)
-- [ ] `--tolerant-missing` after id → rc 0
+- [x] `--tolerant-missing` before id → rc 0 (same as after)
+- [x] `--tolerant-missing` after id → rc 0
 
 ---
 

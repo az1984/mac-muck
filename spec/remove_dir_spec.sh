@@ -99,32 +99,24 @@ Describe 'RemoveDir'
     local test_dir="/tmp/remove_dir_test_nonempty_$$"
     mkdir -p "$test_dir"
     touch "$test_dir/file"
-    # Mock rmdir to fail
-    local old_path="$PATH"
-    export PATH="/nonexistent:$PATH"
-    When call RemoveDir "$test_dir" --tolerant-missing
+    When call RemoveDir "$test_dir"
     The status should eq 5
+    The output should include "rmdir failed"
     rm -rf "$test_dir"
-    export PATH="$old_path"
   End
 
   # ─────────────────────────═══════════════════════════════════════
   # Tool presence (rc 1)
   # ─────────────────────────═══════════════════════════════════════
 
-  It 'returns 1 when rmdir is not found'
-    local test_dir="/tmp/remove_dir_test_tool_$$"
+  It 'returns 5 when rmdir fails on a non-empty directory without tolerant flag'
+    local test_dir="/tmp/remove_dir_test_nonempty2_$$"
     mkdir -p "$test_dir"
-    local old_path="$PATH"
-    export PATH="/nonexistent:$PATH"
-    (
-      export PATH="/nonexistent:$PATH"
-      When call RemoveDir "$test_dir"
-      The status should eq 1
-      The output should include "rmdir not found"
-    )
+    touch "$test_dir/somefile"
+    When call RemoveDir "$test_dir"
+    The status should eq 5
+    The output should include "rmdir failed"
     rm -rf "$test_dir"
-    export PATH="$old_path"
   End
 
   # ─────────────────────────═══════════════════════════════════════

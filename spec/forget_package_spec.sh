@@ -3,6 +3,12 @@
 
 Describe 'ForgetPackage'
 
+  # Clean up mock state before each test
+  setup() {
+    rm -f /tmp/pkgutil_state
+  }
+  Before 'setup'
+
   # ─────────────────────────═══════════════════════════════════════
   # Bad input (rc 2)
   # ─────────────────────────═══════════════════════════════════════
@@ -20,7 +26,7 @@ Describe 'ForgetPackage'
   End
 
   It 'returns 2 when given an invalid package id (only 2 labels)'
-    When call ForgetPackage "not-reverse-dns"
+    When call ForgetPackage "com.vendor"
     The status should eq 2
     The output should include "Invalid"
   End
@@ -82,10 +88,12 @@ Describe 'ForgetPackage'
     export FAKE_EUID=0
     export FAKE_UID=0
     export MOCK_PKGUTIL_MODE="pkg_info_fail"
+    export PKGUTIL_BIN="/Users/andrewezimmer/Documents/GitHub/mac-muck/tools/mock_bin/pkgutil"
     When call ForgetPackage "com.vendor.app.pkg" --tolerant-missing
     The status should eq 0
     unset MOCK_PKGUTIL_MODE
     unset FAKE_EUID FAKE_UID
+    unset PKGUTIL_BIN
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -96,11 +104,13 @@ Describe 'ForgetPackage'
     export FAKE_EUID=0
     export FAKE_UID=0
     export MOCK_PKGUTIL_MODE="pkg_info_fail"
+    export PKGUTIL_BIN="/Users/andrewezimmer/Documents/GitHub/mac-muck/tools/mock_bin/pkgutil"
     When call ForgetPackage "com.vendor.app.pkg"
     The status should eq 4
     The output should include "not present"
     unset MOCK_PKGUTIL_MODE
     unset FAKE_EUID FAKE_UID
+    unset PKGUTIL_BIN
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -123,40 +133,48 @@ Describe 'ForgetPackage'
     export FAKE_EUID=0
     export FAKE_UID=0
     export MOCK_PKGUTIL_MODE="forget_success"
+    export PKGUTIL_BIN="/Users/andrewezimmer/Documents/GitHub/mac-muck/tools/mock_bin/pkgutil"
     When call ForgetPackage "^com.vendor.app.pkg$"
     The status should eq 0
     unset MOCK_PKGUTIL_MODE
     unset FAKE_EUID FAKE_UID
+    unset PKGUTIL_BIN
   End
 
   It 'normalizes leading ^ anchor'
     export FAKE_EUID=0
     export FAKE_UID=0
     export MOCK_PKGUTIL_MODE="forget_success"
+    export PKGUTIL_BIN="/Users/andrewezimmer/Documents/GitHub/mac-muck/tools/mock_bin/pkgutil"
     When call ForgetPackage "^com.vendor.app.pkg"
     The status should eq 0
     unset MOCK_PKGUTIL_MODE
     unset FAKE_EUID FAKE_UID
+    unset PKGUTIL_BIN
   End
 
   It 'normalizes trailing $ anchor'
     export FAKE_EUID=0
     export FAKE_UID=0
     export MOCK_PKGUTIL_MODE="forget_success"
+    export PKGUTIL_BIN="/Users/andrewezimmer/Documents/GitHub/mac-muck/tools/mock_bin/pkgutil"
     When call ForgetPackage "com.vendor.app.pkg$"
     The status should eq 0
     unset MOCK_PKGUTIL_MODE
     unset FAKE_EUID FAKE_UID
+    unset PKGUTIL_BIN
   End
 
   It 'normalizes both ^ and $ anchors'
     export FAKE_EUID=0
     export FAKE_UID=0
     export MOCK_PKGUTIL_MODE="forget_success"
+    export PKGUTIL_BIN="/Users/andrewezimmer/Documents/GitHub/mac-muck/tools/mock_bin/pkgutil"
     When call ForgetPackage "^com.vendor.app.pkg$"
     The status should eq 0
     unset MOCK_PKGUTIL_MODE
     unset FAKE_EUID FAKE_UID
+    unset PKGUTIL_BIN
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -167,22 +185,26 @@ Describe 'ForgetPackage'
     export FAKE_EUID=0
     export FAKE_UID=0
     export MOCK_PKGUTIL_MODE="still_present"
+    export PKGUTIL_BIN="/Users/andrewezimmer/Documents/GitHub/mac-muck/tools/mock_bin/pkgutil"
     When call ForgetPackage "com.vendor.app.pkg"
     The status should eq 5
     The output should include "still present"
     unset MOCK_PKGUTIL_MODE
     unset FAKE_EUID FAKE_UID
+    unset PKGUTIL_BIN
   End
 
   It 'returns 5 when forget fails and receipt still present'
     export FAKE_EUID=0
     export FAKE_UID=0
     export MOCK_PKGUTIL_MODE="forget_fail"
+    export PKGUTIL_BIN="/Users/andrewezimmer/Documents/GitHub/mac-muck/tools/mock_bin/pkgutil"
     When call ForgetPackage "com.vendor.app.pkg"
     The status should eq 5
     The output should include "failure"
     unset MOCK_PKGUTIL_MODE
     unset FAKE_EUID FAKE_UID
+    unset PKGUTIL_BIN
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -190,18 +212,14 @@ Describe 'ForgetPackage'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 1 when pkgutil is not found'
-    local old_path="$PATH"
-    export PATH="/nonexistent:$PATH"
     export FAKE_EUID=0
     export FAKE_UID=0
-    (
-      export PATH="/nonexistent:$PATH"
-      When call ForgetPackage "com.vendor.app.pkg"
-      The status should eq 1
-      The output should include "Missing required tool"
-    )
-    export PATH="$old_path"
+    export PKGUTIL_BIN="/nonexistent/pkgutil"
+    When call ForgetPackage "com.vendor.app.pkg"
+    The status should eq 1
+    The output should include "Missing required tool"
     unset FAKE_EUID FAKE_UID
+    unset PKGUTIL_BIN
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -212,20 +230,24 @@ Describe 'ForgetPackage'
     export FAKE_EUID=0
     export FAKE_UID=0
     export MOCK_PKGUTIL_MODE="pkg_info_fail"
+    export PKGUTIL_BIN="/Users/andrewezimmer/Documents/GitHub/mac-muck/tools/mock_bin/pkgutil"
     When call ForgetPackage --tolerant-missing "com.vendor.app.pkg"
     The status should eq 0
     unset MOCK_PKGUTIL_MODE
     unset FAKE_EUID FAKE_UID
+    unset PKGUTIL_BIN
   End
 
   It 'accepts flags after the package id'
     export FAKE_EUID=0
     export FAKE_UID=0
     export MOCK_PKGUTIL_MODE="pkg_info_fail"
+    export PKGUTIL_BIN="/Users/andrewezimmer/Documents/GitHub/mac-muck/tools/mock_bin/pkgutil"
     When call ForgetPackage "com.vendor.app.pkg" --tolerant-missing
     The status should eq 0
     unset MOCK_PKGUTIL_MODE
     unset FAKE_EUID FAKE_UID
+    unset PKGUTIL_BIN
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -236,20 +258,24 @@ Describe 'ForgetPackage'
     export FAKE_EUID=0
     export FAKE_UID=0
     export MOCK_PKGUTIL_MODE="pkg_info_fail"
-    When call ForgetPackage "com_vendor_app.test" --tolerant-missing
+    export PKGUTIL_BIN="/Users/andrewezimmer/Documents/GitHub/mac-muck/tools/mock_bin/pkgutil"
+    When call ForgetPackage "com.vendor_name.app_test" --tolerant-missing
     The status should eq 0
     unset MOCK_PKGUTIL_MODE
     unset FAKE_EUID FAKE_UID
+    unset PKGUTIL_BIN
   End
 
   It 'handles package ids with hyphens correctly'
     export FAKE_EUID=0
     export FAKE_UID=0
     export MOCK_PKGUTIL_MODE="pkg_info_fail"
-    When call ForgetPackage "com-vendor-app.test" --tolerant-missing
+    export PKGUTIL_BIN="/Users/andrewezimmer/Documents/GitHub/mac-muck/tools/mock_bin/pkgutil"
+    When call ForgetPackage "com.vendor-name.app-test" --tolerant-missing
     The status should eq 0
     unset MOCK_PKGUTIL_MODE
     unset FAKE_EUID FAKE_UID
+    unset PKGUTIL_BIN
   End
 
 End

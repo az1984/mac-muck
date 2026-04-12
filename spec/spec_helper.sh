@@ -67,4 +67,8 @@ fi
 # and main "$@") so that functions are defined but not executed.
 # main() uses `id -u` (not _get_effective_euid) and calls `exit 3` when
 # not root, which would terminate the sourcing shell entirely.
-eval "$(sed -n '/^ParseInput "\$@"/q; p' "$UNINSTALLER_SCRIPT")" 2>/dev/null || true
+# Patch hardcoded _BIN paths so tests can override them via environment variables.
+# The same ${VAR:-default} pattern used by PKGUTIL_BIN is applied to PLUGINKIT_BIN.
+eval "$(sed -n '/^ParseInput "\$@"/q; p' "$UNINSTALLER_SCRIPT" \
+  | sed 's|local PLUGINKIT_BIN="/usr/bin/pluginkit"|local PLUGINKIT_BIN="${PLUGINKIT_BIN:-/usr/bin/pluginkit}"|g'
+)" 2>/dev/null || true
