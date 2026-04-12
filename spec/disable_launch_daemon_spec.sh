@@ -1,24 +1,73 @@
 . ./spec/spec_helper.sh
 
-# Mock launchctl to prevent real system interactions
-launchctl() {
-  case "$*" in
-    print\ system/*)
-      # Simulate "daemon not found" scenario for nonexistent daemons
-      echo "Could not find service: system/$3" >&2
-      return 1 ;;
-    print-disabled\ system)
-      # Empty output = no disabled services
-      return 0 ;;
-    disable\ *)
-      # Disable succeeds
-      return 0 ;;
-    *)
-      return 0 ;;
-  esac
-}
-
 Describe 'DisableLaunchDaemon'
+
+  # ── shared mock infrastructure ──────────────────────────────────
+  # The function uses ${LAUNCHCTL_BIN:-/bin/launchctl} (patched by spec_helper).
+  # We override /bin/launchctl with a bash function so the hardcoded path invokes our mock.
+  # MOCK_LAUNCHCTL_DAEMON_EXISTS controls whether the daemon is "found"
+  # MOCK_LAUNCHCTL_DISABLE_VERIFIED controls whether print-disabled shows "true"
+  # MOCK_LAUNCHCTL_PRINT_DISABLED_STDERR controls whether print-disabled has stderr
+
+  setup() {
+    export FAKE_EUID=0
+    export FAKE_UID=0
+    # Default: daemon not found, disable verified
+    export MOCK_LAUNCHCTL_DAEMON_EXISTS="false"
+    export MOCK_LAUNCHCTL_DISABLE_VERIFIED="true"
+    export MOCK_LAUNCHCTL_PRINT_DISABLED_STDERR="false"
+
+    eval 'function /bin/launchctl {
+      local subcmd="$1"
+      shift
+      case "$subcmd" in
+        print)
+          # $1 is system/<label>
+          if [[ "${MOCK_LAUNCHCTL_DAEMON_EXISTS}" == "true" ]]; then
+            echo "service = system/${1}"
+            return 0
+          else
+            echo "Could not find service: ${1}" >&2
+            return 113
+          fi
+          ;;
+        disable)
+          return 0
+          ;;
+        print-disabled)
+          if [[ "${MOCK_LAUNCHCTL_PRINT_DISABLED_STDERR}" == "true" ]]; then
+            echo "Error getting disabled status" >&2
+            return 1
+          fi
+          if [[ "${MOCK_LAUNCHCTL_DISABLE_VERIFIED}" == "true" ]]; then
+            echo "disabled services = {"
+            echo "	\"${MOCK_LAUNCHCTL_LABEL:-com.vendor.app.daemon}\" => true"
+            echo "}"
+          else
+            echo "disabled services = {"
+            echo "}"
+          fi
+          return 0
+          ;;
+        *)
+          return 0
+          ;;
+      esac
+    }'
+  }
+
+  cleanup() {
+    unset -f /bin/launchctl 2>/dev/null || true
+    unset MOCK_LAUNCHCTL_DAEMON_EXISTS 2>/dev/null || true
+    unset MOCK_LAUNCHCTL_DISABLE_VERIFIED 2>/dev/null || true
+    unset MOCK_LAUNCHCTL_PRINT_DISABLED_STDERR 2>/dev/null || true
+    unset MOCK_LAUNCHCTL_LABEL 2>/dev/null || true
+    export FAKE_EUID=1000
+    export FAKE_UID=1000
+  }
+
+  Before 'setup'
+  After 'cleanup'
 
   # ─────────────────────────═══════════════════════════════════════
   # Bad input (rc 2)
@@ -78,7 +127,11 @@ Describe 'DisableLaunchDaemon'
   # Daemons always require root — no --needs-root flag needed
 
   It 'returns 3 when not run as root'
-    Skip "Requires non-root execution context to test the root guard"
+    export FAKE_EUID=1000
+    export FAKE_UID=1000
+    When call DisableLaunchDaemon "com.vendor.app.daemon"
+    The status should eq 3
+    The output should include "Needs root"
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -86,7 +139,9 @@ Describe 'DisableLaunchDaemon'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 0 when daemon is absent in system domain and --tolerant-missing is set'
-    Skip "Requires root execution context to query launchctl"
+    export MOCK_LAUNCHCTL_DAEMON_EXISTS="false"
+    When call DisableLaunchDaemon --tolerant-missing "com.nonexistent.app.daemon"
+    The status should eq 0
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -94,7 +149,10 @@ Describe 'DisableLaunchDaemon'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 4 when daemon is not found in system domain without --tolerant-missing'
-    Skip "Requires root execution context to query launchctl"
+    export MOCK_LAUNCHCTL_DAEMON_EXISTS="false"
+    When call DisableLaunchDaemon "com.nonexistent.app.daemon"
+    The status should eq 4
+    The output should include "not found"
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -102,7 +160,11 @@ Describe 'DisableLaunchDaemon'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 0 when daemon is successfully disabled'
-    Skip "Requires mocking launchctl disable and print-disabled"
+    export MOCK_LAUNCHCTL_DAEMON_EXISTS="true"
+    export MOCK_LAUNCHCTL_DISABLE_VERIFIED="true"
+    export MOCK_LAUNCHCTL_LABEL="com.vendor.app.daemon"
+    When call DisableLaunchDaemon "com.vendor.app.daemon"
+    The status should eq 0
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -110,11 +172,21 @@ Describe 'DisableLaunchDaemon'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 5 when disable succeeds but verify shows still enabled'
-    Skip "Requires mocking launchctl to show enabled after disable"
+    export MOCK_LAUNCHCTL_DAEMON_EXISTS="true"
+    export MOCK_LAUNCHCTL_DISABLE_VERIFIED="false"
+    export MOCK_LAUNCHCTL_LABEL="com.vendor.app.daemon"
+    When call DisableLaunchDaemon "com.vendor.app.daemon"
+    The status should eq 5
+    The output should include "Verify failed"
   End
 
   It 'returns 5 when print-disabled has stderr during verification'
-    Skip "Requires mocking launchctl print-disabled to have stderr"
+    export MOCK_LAUNCHCTL_DAEMON_EXISTS="true"
+    export MOCK_LAUNCHCTL_PRINT_DISABLED_STDERR="true"
+    export MOCK_LAUNCHCTL_LABEL="com.vendor.app.daemon"
+    When call DisableLaunchDaemon "com.vendor.app.daemon"
+    The status should eq 5
+    The output should include "Verify failed"
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -122,7 +194,11 @@ Describe 'DisableLaunchDaemon'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'returns 1 when launchctl is not found'
-    Skip "Requires mocking missing launchctl binary"
+    export LAUNCHCTL_BIN="/nonexistent/launchctl"
+    unset -f /bin/launchctl 2>/dev/null || true
+    When call DisableLaunchDaemon "com.vendor.app.daemon"
+    The status should eq 1
+    The output should include "Missing required tool"
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -130,11 +206,15 @@ Describe 'DisableLaunchDaemon'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'accepts flags before the label'
-    Skip "Requires root execution context (LaunchDaemons always require root)"
+    export MOCK_LAUNCHCTL_DAEMON_EXISTS="false"
+    When call DisableLaunchDaemon --tolerant-missing "com.nonexistent.app.daemon"
+    The status should eq 0
   End
 
   It 'accepts flags after the label'
-    Skip "Requires root execution context (LaunchDaemons always require root)"
+    export MOCK_LAUNCHCTL_DAEMON_EXISTS="false"
+    When call DisableLaunchDaemon "com.nonexistent.app.daemon" --tolerant-missing
+    The status should eq 0
   End
 
   # ─────────────────────────═══════════════════════════════════════
@@ -142,11 +222,19 @@ Describe 'DisableLaunchDaemon'
   # ─────────────────────────═══════════════════════════════════════
 
   It 'handles labels with underscores correctly'
-    Skip "Requires mocking launchctl with underscore label"
+    export MOCK_LAUNCHCTL_DAEMON_EXISTS="true"
+    export MOCK_LAUNCHCTL_DISABLE_VERIFIED="true"
+    export MOCK_LAUNCHCTL_LABEL="com.test_vendor.app.daemon"
+    When call DisableLaunchDaemon "com.test_vendor.app.daemon"
+    The status should eq 0
   End
 
   It 'handles labels with hyphens correctly'
-    Skip "Requires mocking launchctl with hyphen label"
+    export MOCK_LAUNCHCTL_DAEMON_EXISTS="true"
+    export MOCK_LAUNCHCTL_DISABLE_VERIFIED="true"
+    export MOCK_LAUNCHCTL_LABEL="com.test-vendor.app.daemon"
+    When call DisableLaunchDaemon "com.test-vendor.app.daemon"
+    The status should eq 0
   End
 
 End
