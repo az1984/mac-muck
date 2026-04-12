@@ -61,25 +61,25 @@ This document is the **authoritative test specification**. Each checkbox is a si
 ## QuitAppByPath — `spec/quit_app_by_path_spec.sh`
 
 ### Bad input (rc 2)
-- [ ] No arguments → rc 2, output includes "Bad input"
-- [ ] Unknown flag `--bogus` → rc 2, output includes "unknown flag"
-- [ ] Duplicate `--tolerant-missing` → rc 2, output includes "duplicate"
+- [x] No arguments → rc 2, output includes "Bad input"
+- [x] Unknown flag `--bogus` → rc 2, output includes "unknown flag"
+- [x] Duplicate `--tolerant-missing` → rc 2, output includes "duplicate"
 
 ### Not present (rc 4)
-- [ ] Bundle path does not exist on disk, no tolerance → rc 4
-- [ ] Path exists but is not a `.app` bundle → rc 1 (invalid bundle)
+- [x] Bundle path does not exist on disk, no tolerance → rc 4
+- [x] Path exists but is not a `.app` bundle → rc 1 (invalid bundle)
 
 ### Tolerant missing (rc 0)
-- [ ] Bundle path does not exist, `--tolerant-missing` → rc 0
-- [ ] Process not running (pgrep returns 1), `--tolerant-missing` → rc 0
+- [x] Bundle path does not exist, `--tolerant-missing` → rc 0
+- [x] Process not running (pgrep returns 1), `--tolerant-missing` → rc 0
 
 ### Happy path (rc 0)
-- [ ] PID mode: mock kill -0 succeeds, pkill succeeds, verify pgrep returns 1 → rc 0
-- [ ] Bundle mode: mock PlistBuddy returns executable name, pkill succeeds → rc 0
-- [ ] Process name mode: pkill succeeds, pgrep returns 1 → rc 0
+- [x] PID mode: mock kill -0 succeeds, pkill succeeds, verify pgrep returns 1 → rc 0
+- [x] Bundle mode: mock PlistBuddy returns executable name, pkill succeeds → rc 0
+- [x] Process name mode: pkill succeeds, pgrep returns 1 → rc 0
 
 ### Verify-after failure (rc 5)
-- [ ] Mock pkill succeeds but pgrep still returns 0 (process alive) → rc 5
+- [x] Mock pkill succeeds but pgrep still returns 0 (process alive) → rc 5
 
 ### Tool presence (rc 1)
 - [ ] pgrep not found → rc 1
