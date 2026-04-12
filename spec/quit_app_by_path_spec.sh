@@ -81,6 +81,26 @@ Describe 'QuitAppByPath'
   End
 
   # ─────────────────────────────────────────────────────────══════════════════════
+  # Tool presence (rc 1)
+  # ─────────────────────────────────────────────────────────══════════════════════
+
+  It 'returns 1 when pgrep is not found'
+    export PGREP_BIN="/nonexistent/pgrep"
+    When call QuitAppByPath "testprocess"
+    The status should eq 1
+    The output should include "Missing required tool"
+    unset PGREP_BIN
+  End
+
+  It 'returns 1 when pkill is not found'
+    export PKILL_BIN="/nonexistent/pkill"
+    When call QuitAppByPath "testprocess"
+    The status should eq 1
+    The output should include "Missing required tool"
+    unset PKILL_BIN
+  End
+
+  # ─────────────────────────────────────────────────────────══════════════════════
   # Bundle mode tests
   # ─────────────────────────────────────────────────────────══════════════════════
 

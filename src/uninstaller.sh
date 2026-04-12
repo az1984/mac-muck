@@ -626,10 +626,19 @@ QuitAppByPath() {
   local my_err_prefix="ERROR:    "
   local my_dbg_prefix="DEBUG:    "
 
-  local PKILL="/usr/bin/pkill"
-  local PGREP="/usr/bin/pgrep"
+  local PKILL="${PKILL_BIN:-/usr/bin/pkill}"
+  local PGREP="${PGREP_BIN:-/usr/bin/pgrep}"
   local PLISTB="/usr/libexec/PlistBuddy"
   local KILL="/bin/kill"
+
+  if [[ ! -x "$PGREP" ]]; then
+    echo "${my_echo_prefix}${my_err_prefix}Missing required tool: $PGREP"
+    return 1
+  fi
+  if [[ ! -x "$PKILL" ]]; then
+    echo "${my_echo_prefix}${my_err_prefix}Missing required tool: $PKILL"
+    return 1
+  fi
 
   # -------- args / flags (parse first to catch duplicates before count validation) --------
   local target=""
@@ -1008,6 +1017,16 @@ RemovePathForUsers() {
   if [[ -z "$rel" ]]; then
     echo "${my_echo_prefix}${my_err_prefix} Bad input: relative path cannot be empty"
     return 2
+  fi
+
+  # -------- dependency presence --------
+  if ! type -t ListGraphicalUsers >/dev/null 2>&1; then
+    echo "${my_echo_prefix}${my_err_prefix}Missing dependency: ListGraphicalUsers"
+    return 1
+  fi
+  if ! type -t SafeRemovePath >/dev/null 2>&1; then
+    echo "${my_echo_prefix}${my_err_prefix}Missing dependency: SafeRemovePath"
+    return 1
   fi
 
   # -------- user discovery (if none provided) --------
@@ -1659,6 +1678,12 @@ DisableLaunchAgent() {
     return 2
   fi
 
+  # --- dependency presence ---
+  if ! type -t ListGraphicalUsers >/dev/null 2>&1; then
+    echo "${my_echo_prefix}${my_err_prefix}Missing dependency: ListGraphicalUsers"
+    return 1
+  fi
+
   # --- discover graphical users ---
   local -a users=()
   mapfile -t users < <( ListGraphicalUsers )
@@ -2026,6 +2051,20 @@ UnloadAndRemoveLaunchAgent() {
   if [[ ! "$label" =~ $id_re ]]; then
     echo "${my_echo_prefix}${my_err_prefix}Invalid label format: $label"
     return 2
+  fi
+
+  # --- dependency presence ---
+  if ! type -t ListGraphicalUsers >/dev/null 2>&1; then
+    echo "${my_echo_prefix}${my_err_prefix}Missing dependency: ListGraphicalUsers"
+    return 1
+  fi
+  if ! type -t VerifyServiceUnloaded >/dev/null 2>&1; then
+    echo "${my_echo_prefix}${my_err_prefix}Missing dependency: VerifyServiceUnloaded"
+    return 1
+  fi
+  if ! type -t SafeDelete >/dev/null 2>&1; then
+    echo "${my_echo_prefix}${my_err_prefix}Missing dependency: SafeDelete"
+    return 1
   fi
 
   local plist_name="${label}.plist"
