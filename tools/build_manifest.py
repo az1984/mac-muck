@@ -18,13 +18,24 @@ Usage examples:
       --quit "/Applications/Vendor App.app" \
       --package "com.vendor.app" \
       --package "com.vendor.app.helper" \
-      --agent "com.vendor.app.agent" \
-      --daemon "com.vendor.app.daemon" \
+      --launchagent "com.vendor.app.agent" \
+      --launchdaemon "com.vendor.app.daemon" \
       --finder-ext "com.vendor.app.FinderSync" \
+      --ql-plugin "/Library/QuickLook/Vendor.qlgenerator" \
+      --helper "/Library/PrivilegedHelperTools/com.vendor.helper" \
+      --login-item "com.vendor.loginitem" \
+      --container "com.vendor.app" \
       --output vendor_app_uninstall.json
 
   # Output to stdout (for piping or copy-paste)
   ./build_manifest.py --app-name "SomeApp" --path "/Applications/SomeApp.app"
+
+  # Suspicious Package — uses QuickLook plugin + container
+  ./build_manifest.py --app-name "Suspicious Package" \
+      --path "/Applications/Suspicious Package.app" \
+      --ql-plugin "/Library/QuickLook/SuspiciousPackage.qlgenerator" \
+      --container "com.mothersruin.SuspiciousPackage" \
+      --package "com.mothersruin.SuspiciousPackage.pkg"
 
   # Validate an existing manifest
   ./build_manifest.py --validate existing_manifest.json
@@ -110,6 +121,7 @@ def validate_manifest(manifest: dict) -> tuple[list[str], list[str]]:
     known_keys = {
         "app_name", "paths", "profile_rel_paths", "apps_to_quit",
         "packages", "launch_agents", "launch_daemons", "finder_extensions",
+        "quicklook_plugins", "privileged_helpers", "login_items", "containers",
     }
     for key in manifest:
         if key not in known_keys:
@@ -117,13 +129,17 @@ def validate_manifest(manifest: dict) -> tuple[list[str], list[str]]:
 
     # ── Array fields: type check + per-item validation
     array_validators = {
-        "paths":             ("absolute path",  validate_absolute_path),
-        "apps_to_quit":      ("absolute path",  validate_absolute_path),
-        "profile_rel_paths": ("relative path",  validate_relative_path),
-        "packages":          ("package id",     validate_rdns_id),
-        "launch_agents":     ("agent label",    validate_rdns_id),
-        "launch_daemons":    ("daemon label",   validate_rdns_id),
-        "finder_extensions": ("extension id",   validate_rdns_id),
+        "paths":              ("absolute path",  validate_absolute_path),
+        "apps_to_quit":       ("absolute path",  validate_absolute_path),
+        "profile_rel_paths":  ("relative path",  validate_relative_path),
+        "packages":           ("package id",     validate_rdns_id),
+        "launch_agents":      ("agent label",    validate_rdns_id),
+        "launch_daemons":     ("daemon label",   validate_rdns_id),
+        "finder_extensions":  ("extension id",   validate_rdns_id),
+        "quicklook_plugins":  ("ql plugin path", validate_absolute_path),
+        "privileged_helpers": ("helper path",    validate_absolute_path),
+        "login_items":        ("login item id",  validate_rdns_id),
+        "containers":         ("container id",   validate_rdns_id),
     }
 
     for key, (desc, validator) in array_validators.items():
@@ -156,6 +172,49 @@ def validate_manifest(manifest: dict) -> tuple[list[str], list[str]]:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Path inference
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Matches /Users/<username>/ — captures the relative remainder
+_PER_USER_RE = re.compile(r'^/Users/[^/]+/(.+)$')
+
+
+def classify_paths(args: argparse.Namespace) -> None:
+    """
+    Inspect --path entries and auto-route per-user paths to profile_rel_paths.
+
+    Paths matching /Users/<name>/... are per-user artifacts. In a manifest they
+    belong in profile_rel_paths (the uninstaller iterates all user homes). This
+    function moves them out of args.path and into args.profile_path, warning on
+    stderr so the user sees what was inferred.
+    """
+    if not args.path:
+        return
+
+    keep_paths = []
+    promoted = []
+
+    for p in args.path:
+        m = _PER_USER_RE.match(p)
+        if m:
+            rel = m.group(1)
+            if args.profile_path is None:
+                args.profile_path = []
+            args.profile_path.append(rel)
+            promoted.append((p, rel))
+        else:
+            keep_paths.append(p)
+
+    args.path = keep_paths or None
+
+    for original, rel in promoted:
+        print(
+            f"  ↳ per-user path detected: '{original}' → profile_rel_paths: '{rel}'",
+            file=sys.stderr,
+        )
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Manifest building
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -173,12 +232,20 @@ def build_manifest(args: argparse.Namespace) -> dict:
         manifest["profile_rel_paths"] = args.profile_path
     if args.package:
         manifest["packages"] = args.package
+    if args.launchagent:
+        manifest["launch_agents"] = args.launchagent
+    if args.launchdaemon:
+        manifest["launch_daemons"] = args.launchdaemon
     if args.finder_ext:
         manifest["finder_extensions"] = args.finder_ext
-    if args.agent:
-        manifest["launch_agents"] = args.agent
-    if args.daemon:
-        manifest["launch_daemons"] = args.daemon
+    if args.ql_plugin:
+        manifest["quicklook_plugins"] = args.ql_plugin
+    if args.helper:
+        manifest["privileged_helpers"] = args.helper
+    if args.login_item:
+        manifest["login_items"] = args.login_item
+    if args.container:
+        manifest["containers"] = args.container
 
     return manifest
 
@@ -233,7 +300,7 @@ def main():
         description="Build a JSON uninstall manifest for the universal uninstaller.",
         epilog=(
             "Examples:\n"
-            '  %(prog)s --app-name "Vendor App" --path "/Applications/Vendor App.app" --package "com.vendor.app"\n'
+            '  %(prog)s --app-name "Vendor App" --path "/Applications/Vendor App.app" --package "com.vendor.app" --launchdaemon "com.vendor.daemon"\n'
             '  %(prog)s --validate existing_manifest.json\n'
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -276,13 +343,13 @@ def main():
         help="Package receipt id to forget (repeatable)",
     )
     parser.add_argument(
-        "--agent",
+        "--launchagent",
         action="append",
         metavar="LABEL",
         help="LaunchAgent plist label to unload+remove (repeatable)",
     )
     parser.add_argument(
-        "--daemon",
+        "--launchdaemon",
         action="append",
         metavar="LABEL",
         help="LaunchDaemon plist label to unload+remove (repeatable)",
@@ -292,6 +359,30 @@ def main():
         action="append",
         metavar="BUNDLEID",
         help="Finder extension bundle id to remove (repeatable)",
+    )
+    parser.add_argument(
+        "--ql-plugin",
+        action="append",
+        metavar="ABSPATH",
+        help="QuickLook plugin path to remove, e.g. /Library/QuickLook/Foo.qlgenerator (repeatable)",
+    )
+    parser.add_argument(
+        "--helper",
+        action="append",
+        metavar="ABSPATH",
+        help="Privileged helper tool path to remove, e.g. /Library/PrivilegedHelperTools/com.vendor.helper (repeatable)",
+    )
+    parser.add_argument(
+        "--login-item",
+        action="append",
+        metavar="IDENTIFIER",
+        help="Login item identifier to detect and remove (repeatable)",
+    )
+    parser.add_argument(
+        "--container",
+        action="append",
+        metavar="BUNDLEID",
+        help="App container bundle id — removed from all user profiles (repeatable)",
     )
     parser.add_argument(
         "--output", "-o",
@@ -309,6 +400,7 @@ def main():
     if not args.app_name:
         parser.error("--app-name is required when building a manifest (or use --validate FILE)")
 
+    classify_paths(args)
     manifest = build_manifest(args)
 
     # ── Validate before output
