@@ -1,0 +1,11 @@
+{
+  "app_name": "SuspiciousPackage",
+  "apps_to_quit": [
+    "/Applications/Suspicious Package.app"
+  ],
+  "paths": [
+    "/Applications/Suspicious Package.app",
+    "/Users/andrewezimmer/Library/Application Scripts/com.mothersruin.SuspiciousPackageApp.QLPreview",
+    "/Users/andrewezimmer/Library/Containers/com.mothersruin.SuspiciousPackageApp.QLPreview"
+  ]
+}
