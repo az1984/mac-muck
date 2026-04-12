@@ -314,20 +314,26 @@ This document is the **authoritative test specification**. Each checkbox is a si
 - [x] Unknown flag → rc 2
 
 ### Root check (rc 3)
-- [x] FAKE_EUID=1000 → rc 3
+- [x] Plist exists but FAKE_EUID=1000 → rc 3
+- [x] Plist not found and FAKE_EUID=1000 (non-tolerant) → rc 3
+
+### Tool presence (rc 1)
+- [x] launchctl not found → rc 1
 
 ### Tolerant missing (rc 0)
 - [x] Plist not found, `--tolerant-missing` → rc 0
 
 ### Strict missing (rc 4)
-- [x] Plist not found, no tolerance → rc 4
+- [x] Plist not found, no tolerance (as root) → rc 4
 
 ### Happy path (rc 0)
 - [x] Mock: plist exists, disable + bootout succeed, verified unloaded, SafeDelete succeeds → rc 0
 
 ### Verify-after failure (rc 5)
 - [x] Still running after bootout → rc 5
+- [x] SafeDelete reports failure → rc 5
 - [x] Plist still on disk after delete → rc 5
+- [x] Multiple operations fail → rc 5
 
 ---
 

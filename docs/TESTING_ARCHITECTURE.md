@@ -221,7 +221,20 @@ Creates real plist. SafeDelete returns 0 **but doesn't actually remove the file*
 **Spec:** `spec/unload_and_remove_launch_daemon_spec.sh`
 **Gates used:** A → B (always requires root) → tool presence → label validation → plist exists? → disable → bootout → VerifyServiceUnloaded → SafeDelete → verify → E/F
 
-**COVERAGE GAP: No E or F tests exist.** The spec only covers gates A (bad input), B (needs root), and C (tolerant missing). There are no tests that create a real plist file, run the function, and verify the operation succeeded or failed. This is the only function in the suite with a complete absence of E/F coverage. See the "Gaps" section below.
+**E test — "daemon plist is successfully removed" (rc 0):**
+Creates a real plist file in the test LaunchDaemons dir. Mocks VerifyServiceUnloaded to return 0 and SafeDelete to actually `rm -f` the file. The function finds the plist (passes D), disables, boots out, verifies unloaded, deletes plist → rc 0.
+
+**F test — "daemon still running after bootout" (rc 5):**
+Creates real plist. VerifyServiceUnloaded returns 1 (still running). Plist exists (passes D), disable+bootout attempted, but service verification fails → rc 5 "Verify failed."
+
+**F test — "SafeDelete fails to remove plist" (rc 5):**
+Creates real plist. SafeDelete returns 5. Plist exists, service verified unloaded, but deletion reports failure → rc 5 "Failed to delete."
+
+**F test — "plist still present after deletion attempt" (rc 5):**
+Creates real plist. SafeDelete returns 0 but doesn't actually remove the file. The function's own verify-after sees the plist persists → rc 5 "Verify failed." The "mock lied" pattern.
+
+**F test — "multiple operations fail" (rc 5):**
+Creates real plist. Both VerifyServiceUnloaded returns 1 AND SafeDelete returns 5. Tests that the function accumulates failures and returns rc 5 "operations failed."
 
 ---
 
@@ -351,19 +364,7 @@ IdentifyLoginItemType returns an unrecognized type. RemoveLoginItems doesn't kno
 
 ## Gaps identified
 
-### UnloadAndRemoveLaunchDaemon — Missing E/F tests
-
-The spec file has zero tests for the happy path or any operation-failure scenario. It only covers:
-- rc 2 (bad input, 8 tests)
-- rc 3 (needs root, 1 test)
-- rc 0 (tolerant missing, 1 test)
-- Edge cases (underscores/hyphens, 2 tests)
-
-**Needed:** Tests matching the UnloadAndRemoveLaunchAgent pattern:
-1. E: Create plist, mock VerifyServiceUnloaded + SafeDelete to succeed and actually remove → rc 0
-2. F: Create plist, VerifyServiceUnloaded returns 1 (still running) → rc 5
-3. F: Create plist, SafeDelete returns 5 → rc 5
-4. F: Create plist, SafeDelete returns 0 but doesn't remove → rc 5 (verify-after catches persistence)
+No E/F coverage gaps remain. All functions that modify state have gauntlet-compliant E and F tests.
 
 ### Minor: Section header mislabeling
 
