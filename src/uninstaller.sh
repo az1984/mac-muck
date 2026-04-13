@@ -52,7 +52,7 @@ JAMF_MODE=false
 #   • Only aggregates exit codes + branches on specific ints (no globals)
 # ──────────────────────────────────────────────────────────────────────────────
 main() {
-	if [[ "$(id -u)" -ne 0 ]]; then
+	if [[ $( _get_effective_euid ) -ne 0 ]]; then
 		echo "${ECHO_PREFIX}ERROR: This script must be run as root (sudo)." >&2
 		exit 3
 	fi

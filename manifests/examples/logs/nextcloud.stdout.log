@@ -1,0 +1,18 @@
+uninstaller.sh - Nextcloud - Quit (or not running): /Applications/Nextcloud.app
+uninstaller.sh - Nextcloud - Removed: /Applications/Nextcloud.app
+uninstaller.sh - Nextcloud - Removed from user profiles: ~/Library/Application Scripts/com.nextcloud.desktopclient
+uninstaller.sh - Nextcloud - Removed from user profiles: ~/Library/Application Scripts/com.nextcloud.desktopclient.FileProviderExt
+uninstaller.sh - Nextcloud - Removed from user profiles: ~/Library/Application Scripts/com.nextcloud.desktopclient.FinderSyncExt
+uninstaller.sh - Nextcloud - Forgot package: com.nextcloud.desktopclient
+uninstaller.sh - Nextcloud - Removed Finder extension: com.nextcloud.desktopclient.FinderSyncExt
+uninstaller.sh - Nextcloud - QuickLook subsystem reloaded
+──────────────────────────────────────────────────────────────────────────────
+uninstaller.sh - Nextcloud - Summary:
+  Quit    : success=1 failure=0
+  Paths   : success=1 failure=0 (missing-strict=0)
+  Profiles: success=3 failure=0
+  Packages: success=1 failure=0 (missing-strict=0)
+  Agents  : success=1 failure=0 (includes LaunchAgents, LaunchDaemons, Finder extensions)
+  Daemons : success=0 failure=0
+  Paths   : success=1 failure=0 (includes QuickLook plugins, Privileged Helpers, Login Items)
+uninstaller.sh - Nextcloud - Nextcloud uninstall complete.

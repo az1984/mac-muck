@@ -1,0 +1,19 @@
+uninstaller.sh - Privileges - Quit (or not running): /Applications/Privileges.app
+uninstaller.sh - Privileges - Removed: /Applications/Privileges.app
+uninstaller.sh - Privileges - Removed from user profiles: ~/Library/Application Scripts/corp.sap.privileges
+uninstaller.sh - Privileges - Forgot package: corp.sap.privileges.pkg
+uninstaller.sh - Privileges - Removed LaunchAgent: corp.sap.privileges.agent
+uninstaller.sh - Privileges - Removed LaunchDaemon: corp.sap.privileges.daemon
+uninstaller.sh - Privileges - Removed LaunchDaemon: corp.sap.privileges.helper
+uninstaller.sh - Privileges - Removed LaunchDaemon: corp.sap.privileges.watcher
+uninstaller.sh - Privileges - QuickLook subsystem reloaded
+──────────────────────────────────────────────────────────────────────────────
+uninstaller.sh - Privileges - Summary:
+  Quit    : success=1 failure=0
+  Paths   : success=1 failure=0 (missing-strict=0)
+  Profiles: success=1 failure=0
+  Packages: success=1 failure=0 (missing-strict=0)
+  Agents  : success=1 failure=0 (includes LaunchAgents, LaunchDaemons, Finder extensions)
+  Daemons : success=3 failure=0
+  Paths   : success=1 failure=0 (includes QuickLook plugins, Privileged Helpers, Login Items)
+uninstaller.sh - Privileges - Privileges uninstall complete.

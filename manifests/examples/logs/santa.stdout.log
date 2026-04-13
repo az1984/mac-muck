@@ -1,0 +1,18 @@
+uninstaller.sh - Santa - Quit (or not running): /Applications/Santa.app
+uninstaller.sh - Santa - Removed: /Applications/Santa.app
+uninstaller.sh - Santa - Forgot package: com.google.santa
+uninstaller.sh - Santa - Removed LaunchAgent: com.google.santa
+uninstaller.sh - Santa - Removed LaunchDaemon: com.google.santa.bundleservice
+uninstaller.sh - Santa - Removed LaunchDaemon: com.google.santa.metricservice
+uninstaller.sh - Santa - Removed LaunchDaemon: com.google.santa.syncservice
+uninstaller.sh - Santa - QuickLook subsystem reloaded
+──────────────────────────────────────────────────────────────────────────────
+uninstaller.sh - Santa - Summary:
+  Quit    : success=1 failure=0
+  Paths   : success=1 failure=0 (missing-strict=0)
+  Profiles: success=0 failure=0
+  Packages: success=1 failure=0 (missing-strict=0)
+  Agents  : success=1 failure=0 (includes LaunchAgents, LaunchDaemons, Finder extensions)
+  Daemons : success=3 failure=0
+  Paths   : success=1 failure=0 (includes QuickLook plugins, Privileged Helpers, Login Items)
+uninstaller.sh - Santa - Santa uninstall complete.

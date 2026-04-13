@@ -1,0 +1,14 @@
+uninstaller.sh - SuspiciousPackage - Quit (or not running): /Applications/Suspicious Package.app
+uninstaller.sh - SuspiciousPackage - Removed: /Applications/Suspicious Package.app
+uninstaller.sh - SuspiciousPackage - QuickLook extension (appex): com.mothersruin.SuspiciousPackageApp.QLPreview — removed with parent app bundle
+uninstaller.sh - SuspiciousPackage - QuickLook subsystem reloaded
+──────────────────────────────────────────────────────────────────────────────
+uninstaller.sh - SuspiciousPackage - Summary:
+  Quit    : success=1 failure=0
+  Paths   : success=2 failure=0 (missing-strict=0)
+  Profiles: success=0 failure=0
+  Packages: success=0 failure=0 (missing-strict=0)
+  Agents  : success=0 failure=0 (includes LaunchAgents, LaunchDaemons, Finder extensions)
+  Daemons : success=0 failure=0
+  Paths   : success=2 failure=0 (includes QuickLook plugins, Privileged Helpers, Login Items)
+uninstaller.sh - SuspiciousPackage - SuspiciousPackage uninstall complete.
