@@ -443,18 +443,52 @@ _MANIFEST_TO_CLI_FLAG = OrderedDict([
     ("containers",        "--containers"),
 ])
 
-# Jamf positional parameter mapping ($5–$11)
-# Each tuple: (slot label, manifest key, description)
-_JAMF_SLOTS = [
-    ("$4",  None,              "jamf=true",           "Mode flag (literal)"),
-    ("$5",  "app_name",        None,                  "App display name"),
-    ("$6",  "paths",           None,                  "Paths to remove"),
-    ("$7",  "packages",        None,                  "Package receipt IDs"),
-    ("$8",  "launch_agents",   None,                  "LaunchAgent labels"),
-    ("$9",  "launch_daemons",  None,                  "LaunchDaemon labels"),
-    ("${10}", "finder_extensions", None,              "Finder extension IDs"),
-    ("${11}", "apps_to_quit",  None,                  "Apps to quit"),
-]
+# ──────────────────────────────────────────────────────────────────────────────
+# Jamf slot packing — prefix token system
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Prefix tokens for combined Jamf slots.
+# Convention: / delimiter for reverse-DNS identifiers, : delimiter for paths.
+_TOKEN_MAP = {
+    # $8 — Launch items (agents + daemons combined)
+    "launch_agents":      "$LibAgt/",
+    "launch_daemons":     "$LibDmn/",
+    # $10 — Extras A (finder extensions, QL plugins)
+    "finder_extensions":  "$FndExt/",
+    # quicklook_plugins uses dynamic token — see _tokenize_ql_plugin()
+    # $11 — Extras B (containers, login items, helpers, user-relative paths)
+    "containers":         "$UsrCnt/",
+    "login_items":        "$Login/",
+    "privileged_helpers": "$HlpBin:",
+    "profile_rel_paths":  "$UsrRel:",
+}
+
+
+def _tokenize_ql_plugin(entry: str) -> str:
+    """Apply the correct QL plugin token: $QLPlg/ for IDs, $QLPlg: for paths."""
+    if entry.startswith("/"):
+        return f"$QLPlg:{entry}"
+    return f"$QLPlg/{entry}"
+
+
+def _build_combined_slot(manifest: dict, manifest_keys: list[str]) -> str:
+    """
+    Build a pipe-delimited tokenized slot value from multiple manifest arrays.
+
+    Each entry gets its prefix token prepended. Returns empty string if no
+    entries exist across any of the keys.
+    """
+    parts = []
+    for key in manifest_keys:
+        values = manifest.get(key, [])
+        if not values:
+            continue
+        if key == "quicklook_plugins":
+            parts.extend(_tokenize_ql_plugin(v) for v in values)
+        else:
+            token = _TOKEN_MAP.get(key, "")
+            parts.extend(f"{token}{v}" for v in values)
+    return "|".join(parts)
 
 
 def format_cli_usage(manifest: dict) -> str:
@@ -487,60 +521,68 @@ def format_cli_usage(manifest: dict) -> str:
     return "\n".join(lines)
 
 
+def _format_slot(lines: list[str], slot: str, desc: str, value: str) -> None:
+    """Append a formatted Jamf slot entry with char-count warnings."""
+    char_count = len(value) if value and value != "(empty — not needed)" else 0
+    warn = ""
+    if char_count > 255:
+        warn = f"  ⚠ {char_count} chars — EXCEEDS 255-char Jamf limit!"
+    elif char_count > 200:
+        warn = f"  ({char_count}/255 chars)"
+
+    lines.append(f"  {slot:>6}  {desc}")
+    lines.append(f"          {value}{warn}")
+    lines.append("")
+
+
 def format_jamf_usage(manifest: dict) -> str:
-    """Format a manifest as Jamf parameter assignments ($4–$11)."""
+    """Format a manifest as Jamf parameter assignments ($4–$11) with prefix tokens."""
     lines = [
         "# Jamf Policy — Script Parameters",
         "#",
         "# In the Jamf Pro policy, set the script parameters as follows.",
-        "# Each value goes in the corresponding parameter slot.",
         "# Multiple values within a slot are pipe-delimited ( | ).",
+        "# Combined slots use prefix tokens to encode the target type.",
         "# Maximum 255 characters per slot.",
+        "#",
+        "# Token reference:",
+        "#   $LibAgt/ = LaunchAgent    $LibDmn/ = LaunchDaemon",
+        "#   $FndExt/ = Finder ext     $QLPlg/  = QL plugin (ID)  $QLPlg: = QL plugin (path)",
+        "#   $UsrCnt/ = Container      $Login/  = Login item",
+        "#   $HlpBin: = Priv helper    $UsrRel: = User-relative path",
         "#",
     ]
 
-    for slot, key, override, desc in _JAMF_SLOTS:
-        if override:
-            value = override
-        elif key:
-            raw = manifest.get(key)
-            if not raw:
-                value = "(empty — not needed)"
-            elif isinstance(raw, list):
-                value = "|".join(raw)
-            else:
-                value = raw
-        else:
-            value = ""
+    # $4 — mode flag (literal)
+    _format_slot(lines, "$4", "Mode flag (literal)", "jamf=true")
 
-        char_count = len(value) if value and value != "(empty — not needed)" else 0
-        warn = ""
-        if char_count > 255:
-            warn = f"  ⚠ {char_count} chars — EXCEEDS 255-char Jamf limit!"
-        elif char_count > 200:
-            warn = f"  ({char_count}/255 chars)"
+    # $5 — app_name (plain string)
+    app_name = manifest.get("app_name", "")
+    _format_slot(lines, "$5", "App display name", app_name or "(empty — not needed)")
 
-        lines.append(f"  {slot:>6}  {desc}")
-        lines.append(f"          {value}{warn}")
-        lines.append("")
+    # $6 — paths (pipe-delimited absolute paths)
+    paths = manifest.get("paths", [])
+    _format_slot(lines, "$6", "Paths to remove", "|".join(paths) if paths else "(empty — not needed)")
 
-    # Extra guidance for fields not in Jamf slots
-    extra_keys = {
-        "profile_rel_paths", "quicklook_plugins", "privileged_helpers",
-        "login_items", "containers",
-    }
-    has_extra = [k for k in extra_keys if manifest.get(k)]
-    if has_extra:
-        lines.append("# ⚠  The following manifest keys have no Jamf parameter slot:")
-        for k in has_extra:
-            values = manifest[k]
-            if isinstance(values, list):
-                lines.append(f"#   {k}: {', '.join(values)}")
-            else:
-                lines.append(f"#   {k}: {values}")
-        lines.append("#")
-        lines.append("# Use --manifest mode instead, or add these to the script's")
-        lines.append("# hardcoded arrays for this app.")
+    # $7 — packages (pipe-delimited reverse-DNS)
+    packages = manifest.get("packages", [])
+    _format_slot(lines, "$7", "Package receipt IDs", "|".join(packages) if packages else "(empty — not needed)")
+
+    # $8 — launch items (agents + daemons, prefix-tokenized)
+    slot8 = _build_combined_slot(manifest, ["launch_agents", "launch_daemons"])
+    _format_slot(lines, "$8", "Launch items (agents + daemons, tokenized)", slot8 or "(empty — not needed)")
+
+    # $9 — apps to quit (pipe-delimited absolute paths)
+    quit_apps = manifest.get("apps_to_quit", [])
+    _format_slot(lines, "$9", "Apps to quit", "|".join(quit_apps) if quit_apps else "(empty — not needed)")
+
+    # $10 — extras A (finder extensions, QL plugins, prefix-tokenized)
+    slot10 = _build_combined_slot(manifest, ["finder_extensions", "quicklook_plugins"])
+    _format_slot(lines, "${10}", "Extras A (Finder exts + QL plugins, tokenized)", slot10 or "(empty — not needed)")
+
+    # $11 — extras B (containers, login items, helpers, user-relative paths, prefix-tokenized)
+    slot11 = _build_combined_slot(manifest, ["containers", "login_items", "privileged_helpers", "profile_rel_paths"])
+    _format_slot(lines, "${11}", "Extras B (containers, login items, helpers, user paths, tokenized)", slot11 or "(empty — not needed)")
 
     return "\n".join(lines)
 

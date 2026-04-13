@@ -39,6 +39,7 @@ FINDER_EXTENSIONS_TO_REMOVE=()
 QUICKLOOK_PLUGINS_TO_REMOVE=()
 PRIVILEGED_HELPERS_TO_REMOVE=()
 LOGIN_ITEMS_TO_REMOVE=()
+CONTAINERS_TO_REMOVE=()
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Global flags set by ParseInput (do not edit here — parsed at runtime)
@@ -2972,6 +2973,102 @@ function IdentifyLoginItemType {
 }
 #--------------------------------------------------------------------------------
 
+# @name ExpandTokenizedSlot
+# @version 1.0.0
+# @approved true
+# @channels stable,beta
+# @branch core
+#
+# ExpandTokenizedSlot — Parse a pipe-delimited tokenized slot and route entries
+#   to the correct global arrays based on prefix tokens.
+#
+#   Each entry in the slot is either:
+#     - Prefixed with a token (e.g., "$LibAgt/com.vendor.agent") — token is
+#       stripped and the value is appended to the corresponding global array.
+#     - Bare (no recognized prefix) — appended to the default array.
+#
+# Inputs:
+#   $1  raw slot string (pipe-delimited, tokenized)
+#   $2  default array name (for entries with no recognized prefix)
+#
+# Token reference:
+#   $LibAgt/ → LAUNCH_AGENTS_TO_REMOVE    $UsrAgt/ → LAUNCH_AGENTS_TO_REMOVE
+#   $LibDmn/ → LAUNCH_DAEMONS_TO_REMOVE   $SysDmn/ → LAUNCH_DAEMONS_TO_REMOVE
+#   $FndExt/ → FINDER_EXTENSIONS_TO_REMOVE
+#   $QLPlg/  → QUICKLOOK_PLUGINS_TO_REMOVE (bundle ID)
+#   $QLPlg:  → QUICKLOOK_PLUGINS_TO_REMOVE (path)
+#   $UsrCnt/ → CONTAINERS_TO_REMOVE
+#   $Login/  → LOGIN_ITEMS_TO_REMOVE
+#   $HlpBin: → PRIVILEGED_HELPERS_TO_REMOVE
+#   $UsrRel: → PROFILE_REL_PATHS_TO_REMOVE
+#
+# Returns:
+#   0 = success
+#   2 = bad input (missing arguments)
+#
+# Side effects:
+#   Appends to global config arrays based on token routing.
+function ExpandTokenizedSlot {
+  local raw_slot="${1:-}"       # pipe-delimited tokenized string
+  local default_array="${2:-}"  # array name for bare (unprefixed) entries
+
+  if [[ -z "$raw_slot" ]]; then
+    return 0  # empty slot is fine — nothing to parse
+  fi
+
+  local -a entries=()
+  IFS='|' read -ra entries <<< "$raw_slot"
+
+  local entry value
+  for entry in "${entries[@]}"; do
+    case "$entry" in
+      '$LibAgt/'*)
+        value="${entry#\$LibAgt/}"
+        LAUNCH_AGENTS_TO_REMOVE+=("$value") ;;
+      '$UsrAgt/'*)
+        value="${entry#\$UsrAgt/}"
+        LAUNCH_AGENTS_TO_REMOVE+=("$value") ;;
+      '$LibDmn/'*)
+        value="${entry#\$LibDmn/}"
+        LAUNCH_DAEMONS_TO_REMOVE+=("$value") ;;
+      '$SysDmn/'*)
+        value="${entry#\$SysDmn/}"
+        LAUNCH_DAEMONS_TO_REMOVE+=("$value") ;;
+      '$FndExt/'*)
+        value="${entry#\$FndExt/}"
+        FINDER_EXTENSIONS_TO_REMOVE+=("$value") ;;
+      '$QLPlg/'*)
+        value="${entry#\$QLPlg/}"
+        QUICKLOOK_PLUGINS_TO_REMOVE+=("$value") ;;
+      '$QLPlg:'*)
+        value="${entry#\$QLPlg:}"
+        QUICKLOOK_PLUGINS_TO_REMOVE+=("$value") ;;
+      '$UsrCnt/'*)
+        value="${entry#\$UsrCnt/}"
+        CONTAINERS_TO_REMOVE+=("$value") ;;
+      '$Login/'*)
+        value="${entry#\$Login/}"
+        LOGIN_ITEMS_TO_REMOVE+=("$value") ;;
+      '$HlpBin:'*)
+        value="${entry#\$HlpBin:}"
+        PRIVILEGED_HELPERS_TO_REMOVE+=("$value") ;;
+      '$UsrRel:'*)
+        value="${entry#\$UsrRel:}"
+        PROFILE_REL_PATHS_TO_REMOVE+=("$value") ;;
+      *)
+        # No recognized prefix — route to default array
+        if [[ -n "$default_array" ]]; then
+          eval "${default_array}+=(\"\$entry\")"
+        fi
+        [[ ${DEBUG:-false} == true ]] && echo "DEBUG: ExpandTokenizedSlot — bare entry '$entry' → $default_array" ;;
+    esac
+    [[ ${DEBUG:-false} == true ]] && echo "DEBUG: ExpandTokenizedSlot — '${entry}'"
+  done
+
+  return 0
+}
+#--------------------------------------------------------------------------------
+
 # @name ParseInput
 # @version 1.0.0
 # @approved true
@@ -3005,13 +3102,17 @@ function IdentifyLoginItemType {
 #     --login-items="com.loginitem1"
 #
 #   Jamf mode ($4 == "jamf=true"):
-#     $1 = mountpoint
-#     $2 = computername
-#     $3 = username
+#     $1 = mountpoint (Jamf-provided, unused)
+#     $2 = computername (Jamf-provided, unused)
+#     $3 = username (Jamf-provided, unused)
 #     $4 = "jamf=true" (triggers Jamf mode)
-#     $5 = app_name
-#     $6 = paths (pipe-delimited)
-#     $7 = packages (pipe-delimited)
+#     $5 = app_name (plain string)
+#     $6 = paths (pipe-delimited absolute paths)
+#     $7 = packages (pipe-delimited reverse-DNS)
+#     $8 = launch items (prefix-tokenized: $LibAgt/, $LibDmn/, etc.)
+#     $9 = apps to quit (pipe-delimited absolute paths)
+#     ${10} = extras A (prefix-tokenized: $FndExt/, $QLPlg/, $QLPlg:)
+#     ${11} = extras B (prefix-tokenized: $UsrCnt/, $Login/, $HlpBin:, $UsrRel:)
 #
 # Returns:
 #   0 = success (arrays populated from whichever source)
@@ -3158,11 +3259,15 @@ function ParseInput {
   if [[ "${4:-}" == "jamf=true" ]]; then
     JAMF_MODE=true
 
-    # $5 = app_name, $6 = paths, $7 = packages
-    local jamf_app_name="${5:-}"
-    local jamf_paths="${6:-}"
-    local jamf_packages="${7:-}"
+    local jamf_app_name="${5:-}"   # $5 = app_name
+    local jamf_paths="${6:-}"      # $6 = paths (pipe-delimited)
+    local jamf_packages="${7:-}"   # $7 = packages (pipe-delimited)
+    local jamf_launch="${8:-}"     # $8 = launch items (tokenized)
+    local jamf_quit="${9:-}"       # $9 = apps to quit (pipe-delimited)
+    local jamf_extras_a="${10:-}"  # ${10} = extras A (tokenized)
+    local jamf_extras_b="${11:-}"  # ${11} = extras B (tokenized)
 
+    # Simple slots — pipe-split into arrays
     if [[ -n "$jamf_app_name" ]]; then
       APP_NAME="$jamf_app_name"
     fi
@@ -3172,6 +3277,17 @@ function ParseInput {
     if [[ -n "$jamf_packages" ]]; then
       IFS='|' read -ra PKGS_TO_REMOVE <<< "$jamf_packages"
     fi
+    if [[ -n "$jamf_quit" ]]; then
+      IFS='|' read -ra APPS_TO_QUIT <<< "$jamf_quit"
+    fi
+
+    # Tokenized slots — route via ExpandTokenizedSlot
+    # $8: launch items — bare entries default to LAUNCH_AGENTS_TO_REMOVE
+    ExpandTokenizedSlot "$jamf_launch" "LAUNCH_AGENTS_TO_REMOVE"
+    # ${10}: extras A — bare entries default to FINDER_EXTENSIONS_TO_REMOVE
+    ExpandTokenizedSlot "$jamf_extras_a" "FINDER_EXTENSIONS_TO_REMOVE"
+    # ${11}: extras B — bare entries default to PROFILE_REL_PATHS_TO_REMOVE
+    ExpandTokenizedSlot "$jamf_extras_b" "PROFILE_REL_PATHS_TO_REMOVE"
 
     # Update ECHO_PREFIX if APP_NAME changed
     ECHO_PREFIX="uninstaller.sh - ${APP_NAME:+${APP_NAME} - }"
