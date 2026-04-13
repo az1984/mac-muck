@@ -424,6 +424,128 @@ def run_validate(filepath: str) -> int:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Usage formatters
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Maps manifest keys to uninstaller.sh CLI flag names
+_MANIFEST_TO_CLI_FLAG = OrderedDict([
+    ("app_name",          "--app-name"),
+    ("apps_to_quit",      "--quit"),
+    ("paths",             "--paths"),
+    ("profile_rel_paths", "--profile-paths"),
+    ("packages",          "--packages"),
+    ("launch_agents",     "--agents"),
+    ("launch_daemons",    "--daemons"),
+    ("finder_extensions", "--finder-exts"),
+    ("quicklook_plugins", "--ql-plugins"),
+    ("privileged_helpers","--helpers"),
+    ("login_items",       "--login-items"),
+    ("containers",        "--containers"),
+])
+
+# Jamf positional parameter mapping ($5–$11)
+# Each tuple: (slot label, manifest key, description)
+_JAMF_SLOTS = [
+    ("$4",  None,              "jamf=true",           "Mode flag (literal)"),
+    ("$5",  "app_name",        None,                  "App display name"),
+    ("$6",  "paths",           None,                  "Paths to remove"),
+    ("$7",  "packages",        None,                  "Package receipt IDs"),
+    ("$8",  "launch_agents",   None,                  "LaunchAgent labels"),
+    ("$9",  "launch_daemons",  None,                  "LaunchDaemon labels"),
+    ("${10}", "finder_extensions", None,              "Finder extension IDs"),
+    ("${11}", "apps_to_quit",  None,                  "Apps to quit"),
+]
+
+
+def format_cli_usage(manifest: dict) -> str:
+    """Format a manifest as ready-to-copy CLI arguments for uninstaller.sh."""
+    lines = [
+        "# Run the uninstaller with the following command:",
+        "#",
+        "sudo ./src/uninstaller.sh \\",
+    ]
+
+    flag_lines = []
+    for key, flag in _MANIFEST_TO_CLI_FLAG.items():
+        value = manifest.get(key)
+        if not value:
+            continue
+        if isinstance(value, list):
+            # Pipe-delimited for the uninstaller's CLI parsing
+            joined = "|".join(value)
+            flag_lines.append(f'    {flag}="{joined}"')
+        else:
+            flag_lines.append(f'    {flag}="{value}"')
+
+    # Join with backslash-newline continuation, last line has no backslash
+    for i, line in enumerate(flag_lines):
+        if i < len(flag_lines) - 1:
+            lines.append(line + " \\")
+        else:
+            lines.append(line)
+
+    return "\n".join(lines)
+
+
+def format_jamf_usage(manifest: dict) -> str:
+    """Format a manifest as Jamf parameter assignments ($4–$11)."""
+    lines = [
+        "# Jamf Policy — Script Parameters",
+        "#",
+        "# In the Jamf Pro policy, set the script parameters as follows.",
+        "# Each value goes in the corresponding parameter slot.",
+        "# Multiple values within a slot are pipe-delimited ( | ).",
+        "# Maximum 255 characters per slot.",
+        "#",
+    ]
+
+    for slot, key, override, desc in _JAMF_SLOTS:
+        if override:
+            value = override
+        elif key:
+            raw = manifest.get(key)
+            if not raw:
+                value = "(empty — not needed)"
+            elif isinstance(raw, list):
+                value = "|".join(raw)
+            else:
+                value = raw
+        else:
+            value = ""
+
+        char_count = len(value) if value and value != "(empty — not needed)" else 0
+        warn = ""
+        if char_count > 255:
+            warn = f"  ⚠ {char_count} chars — EXCEEDS 255-char Jamf limit!"
+        elif char_count > 200:
+            warn = f"  ({char_count}/255 chars)"
+
+        lines.append(f"  {slot:>6}  {desc}")
+        lines.append(f"          {value}{warn}")
+        lines.append("")
+
+    # Extra guidance for fields not in Jamf slots
+    extra_keys = {
+        "profile_rel_paths", "quicklook_plugins", "privileged_helpers",
+        "login_items", "containers",
+    }
+    has_extra = [k for k in extra_keys if manifest.get(k)]
+    if has_extra:
+        lines.append("# ⚠  The following manifest keys have no Jamf parameter slot:")
+        for k in has_extra:
+            values = manifest[k]
+            if isinstance(values, list):
+                lines.append(f"#   {k}: {', '.join(values)}")
+            else:
+                lines.append(f"#   {k}: {values}")
+        lines.append("#")
+        lines.append("# Use --manifest mode instead, or add these to the script's")
+        lines.append("# hardcoded arrays for this app.")
+
+    return "\n".join(lines)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # CLI
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -522,18 +644,42 @@ def main():
         help="Write manifest to FILE (default: stdout)",
     )
 
+    # ── Usage output modes
+    parser.add_argument(
+        "--cli-usage",
+        action="store_true",
+        help="Print ready-to-copy CLI arguments for uninstaller.sh instead of JSON",
+    )
+    parser.add_argument(
+        "--jamf-usage",
+        action="store_true",
+        help="Print Jamf parameter mapping ($4–$11) instead of JSON",
+    )
+    parser.add_argument(
+        "--import-manifest",
+        metavar="FILE",
+        help="Import an existing JSON manifest instead of building from flags",
+    )
+
     args = parser.parse_args()
 
     # ── Validate mode
     if args.validate:
         sys.exit(run_validate(args.validate))
 
-    # ── Build mode: require --app-name
-    if not args.app_name:
-        parser.error("--app-name is required when building a manifest (or use --validate FILE)")
-
-    classify_paths(args)
-    manifest = build_manifest(args)
+    # ── Import or build the manifest
+    if args.import_manifest:
+        if not os.path.isfile(args.import_manifest):
+            print(f"ERROR: File not found: {args.import_manifest}", file=sys.stderr)
+            sys.exit(1)
+        with open(args.import_manifest, "r", encoding="utf-8") as f:
+            manifest = json.load(f)
+    else:
+        # Build mode: require --app-name
+        if not args.app_name:
+            parser.error("--app-name is required when building a manifest (or use --validate / --import-manifest)")
+        classify_paths(args)
+        manifest = build_manifest(args)
 
     # ── Validate before output
     errors, warnings = validate_manifest(manifest)
@@ -551,7 +697,17 @@ def main():
         print("\nManifest NOT written due to errors.", file=sys.stderr)
         sys.exit(1)
 
-    # ── Serialize
+    # ── Output: CLI usage
+    if args.cli_usage:
+        print(format_cli_usage(manifest))
+        sys.exit(0)
+
+    # ── Output: Jamf usage
+    if args.jamf_usage:
+        print(format_jamf_usage(manifest))
+        sys.exit(0)
+
+    # ── Output: JSON (default)
     json_str = json.dumps(manifest, indent=2, ensure_ascii=False)
 
     if args.output:

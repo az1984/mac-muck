@@ -3180,9 +3180,13 @@ function ParseInput {
     return 0
   fi
 
-  # --- Fallback: no input source matched, keep hardcoded arrays ---
-  [[ ${DEBUG:-false} == true ]] && echo "DEBUG: ParseInput — fallback to hardcoded arrays"
-  return 0
+  # --- No input source matched — error out ---
+  echo "ERROR: No input provided. Usage:" >&2
+  echo "  ./uninstaller.sh manifest.json" >&2
+  echo "  ./uninstaller.sh --manifest=manifest.json" >&2
+  echo "  ./uninstaller.sh --app-name=\"App\" --paths=\"/path\" ..." >&2
+  echo "  (Jamf mode: \$4=jamf=true \$5=app_name \$6=paths ...)" >&2
+  return 2
 }
 #--------------------------------------------------------------------------------
 
@@ -3661,5 +3665,5 @@ function ParseManifestJSON {
 # ──────────────────────────────────────────────────────────────────────────────
 # Run
 # ──────────────────────────────────────────────────────────────────────────────
-ParseInput "$@"
+ParseInput "$@" || exit $?
 main "$@"
