@@ -16,8 +16,31 @@
 #   0 on success (no failures); 1 if any step fails; 3 if not run as root.
 #
 # Requires:
-#   Binaries: /usr/sbin/pkgutil, /bin/launchctl
-#   Functions: SafeRemovePath, ForgetPackage, SafeDelete, UnlinkSymlink, RemoveDir, RemovePathForUsers, QuitAppByPath, ListGraphicalUsers, VerifyServiceUnloaded, DisableLaunchAgent, DisableLaunchDaemon, UnloadAndRemoveLaunchAgent, UnloadAndRemoveLaunchDaemon
+#   Binaries: /usr/sbin/pkgutil, /bin/launchctl, /usr/bin/plutil
+#
+# Functions included in this file (alphabetical):
+#   CoreExec                    — main entry point: root check, iteration loops, summary
+#   DisableLaunchAgent          — disable a LaunchAgent for all graphical users
+#   DisableLaunchDaemon         — disable a LaunchDaemon in the system domain
+#   ExpandTokenizedSlot         — parse prefix-tokenized Jamf slot into global arrays
+#   ForgetPackage               — remove macOS package receipts via pkgutil
+#   IdentifyLoginItemType       — query BTM to detect login item persistence type
+#   ListGraphicalUsers          — discover local graphical user accounts
+#   ParseInput                  — three-mode input router (manifest / CLI / Jamf)
+#   ParseManifestJSON           — plutil-based JSON manifest parser
+#   QuitAppByPath               — quit apps by bundle path, binary, name, or PID
+#   RemoveDir                   — remove empty directories
+#   RemoveFinderExtension       — disable + unregister Finder Sync extensions
+#   RemoveLoginItems            — identify and remove login items by type
+#   RemovePathForUsers          — remove user-relative paths across all user homes
+#   RemovePrivilegedHelper      — remove helper binaries from PrivilegedHelperTools
+#   RemoveQuickLookPlugin       — remove .qlgenerator bundles
+#   SafeDelete                  — non-recursive single-node delete
+#   SafeRemovePath              — recursive bottom-up path removal
+#   UnlinkSymlink               — unlink symlinks only
+#   UnloadAndRemoveLaunchAgent  — full lifecycle: disable, bootout, verify, delete
+#   UnloadAndRemoveLaunchDaemon — full lifecycle for system-wide daemons
+#   VerifyServiceUnloaded       — confirm a launchd service is no longer active
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Config — defaults for standalone use. Overridden by manifest or CLI flags.
@@ -258,7 +281,7 @@ function CoreExec {
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Functions area (declare after main; helpers own tolerance logic)
+# Functions area (declare after CoreExec; helpers own tolerance logic)
 # ──────────────────────────────────────────────────────────────────────────────
 
 # Support for testing: use FAKE_EUID/FAKE_UID when available (set by spec_helper.sh)
@@ -1063,7 +1086,7 @@ function IdentifyLoginItemType {
 #   1 = generic failure
 #   2 = bad input (unknown flag)
 #   3 = needs root (when --needs-root is supplied but EUID != 0)
-
+#
 #
 # Requires:
 #   Binaries: /usr/bin/dscl, /usr/bin/id
@@ -1157,7 +1180,7 @@ function ListGraphicalUsers {
 #   3 = needs root (when --needs-root is supplied but EUID != 0)
 #   4 = missing bundle without --tolerant-missing
 #   5 = signal/kill failed
-
+#
 #
 # Requires:
 #   Binaries: /usr/bin/pkill, /usr/bin/pgrep, /usr/libexec/PlistBuddy, /usr/bin/realpath, /bin/kill
@@ -1374,7 +1397,7 @@ function QuitAppByPath {
 #   3 = needs root (when --needs-root is supplied but EUID != 0)
 #   4 = missing without --tolerant-missing
 #   5 = rmdir failed
-
+#
 #
 # Requires:
 #   Binaries: /bin/rmdir
@@ -1816,7 +1839,7 @@ function RemoveLoginItems {
 #   2 = bad input (missing path or unknown flag)
 #   3 = needs root (when --needs-root is supplied but EUID != 0)
 #   5 = one or more per-user removals failed
-
+#
 #
 # Requires:
 #   Functions: SafeRemovePath, ListGraphicalUsers
@@ -2083,7 +2106,7 @@ function RemovePrivilegedHelper {
 #
 # RemoveQuickLookPlugin — Remove a QuickLook generator plugin (.qlgenerator bundle) from disk.
 #   Takes a filesystem path pointing to the .qlgenerator directory itself.
-#   Uses SafeRemovePath for removal. The qlmanage -r reload is called by main()
+#   Uses SafeRemovePath for removal. The qlmanage -r reload is called by CoreExec()
 #   AFTER all plugins are removed, not inside this function.
 #
 # Inputs (order-agnostic):
@@ -2103,7 +2126,7 @@ function RemovePrivilegedHelper {
 #   Functions: SafeRemovePath
 # Safety notes:
 #   - This function only removes the .qlgenerator directory from disk.
-#   - Does NOT call qlmanage -r; that is called once in main() after all removals.
+#   - Does NOT call qlmanage -r; that is called once in CoreExec() after all removals.
 #   - Path must be absolute and end with .qlgenerator (case-sensitive).
 #   - SafeRemovePath handles bottom-up removal of directory bundles.
 function RemoveQuickLookPlugin {
@@ -2228,7 +2251,7 @@ function RemoveQuickLookPlugin {
 #   3 = needs root (when --needs-root is supplied but EUID != 0)
 #   4 = missing without --tolerant-missing
 #   5 = delete step failed (unlink/rmdir/rm)
-
+#
 #
 # Requires:
 #   Binaries: /bin/rm
@@ -2353,7 +2376,7 @@ function SafeDelete {
 #   3 = needs root (when --needs-root is supplied but EUID != 0)
 #   4 = missing without --tolerant-missing
 #   5 = one or more delete steps failed
-
+#
 #
 # Requires:
 #   Binaries: /usr/bin/realpath, /usr/bin/find
@@ -2506,7 +2529,7 @@ function SafeRemovePath {
 #   3 = needs root (when --needs-root is supplied but EUID != 0)
 #   4 = missing without --tolerant-missing
 #   5 = unlink failed
-
+#
 #
 # Requires:
 #   Binaries: /usr/bin/unlink
@@ -3224,7 +3247,7 @@ function ExpandTokenizedSlot {
 #     3. Jamf mode ($4 == "jamf=true") → parses $5, $6, $7, etc.
 #     4. Fallback to hardcoded arrays (no modification)
 #
-#   This function is called ONCE, BEFORE main(), at script invocation time.
+#   This function is called ONCE, BEFORE CoreExec(), at script invocation time.
 #
 # Inputs:
 #   $@  All script arguments (flags and positional params)
