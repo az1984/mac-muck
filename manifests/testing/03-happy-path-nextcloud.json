@@ -1,0 +1,12 @@
+{
+  "_test_description": "Clean uninstall of Nextcloud. Tests Finder extension, containers, profile paths, and package receipt.",
+  "_expected_rc": 0,
+  "_function_under_test": "all",
+  "app_name": "Nextcloud",
+  "apps_to_quit": ["/Applications/Nextcloud.app"],
+  "paths": ["/Applications/Nextcloud.app"],
+  "profile_rel_paths": ["Library/Application Scripts/com.nextcloud.desktopclient", "Library/Application Scripts/com.nextcloud.desktopclient.FileProviderExt", "Library/Application Scripts/com.nextcloud.desktopclient.FinderSyncExt"],
+  "packages": ["com.nextcloud.desktopclient"],
+  "finder_extensions": ["com.nextcloud.desktopclient.FinderSyncExt"],
+  "containers": ["com.nextcloud.desktopclient", "com.nextcloud.desktopclient.FileProviderExt", "com.nextcloud.desktopclient.FinderSyncExt"]
+}

@@ -1,0 +1,12 @@
+{
+  "_test_description": "Container bundle ID that was never created. Tests per-user removal tolerant-missing. Real containers removed, phantom skipped.",
+  "_expected_rc": 1,
+  "_function_under_test": "RemovePathForUsers",
+  "app_name": "Nextcloud",
+  "apps_to_quit": ["/Applications/Nextcloud.app"],
+  "paths": ["/Applications/Nextcloud.app"],
+  "profile_rel_paths": ["Library/Application Scripts/com.nextcloud.desktopclient", "Library/Application Scripts/com.nextcloud.desktopclient.FileProviderExt", "Library/Application Scripts/com.nextcloud.desktopclient.FinderSyncExt"],
+  "packages": ["com.nextcloud.desktopclient"],
+  "finder_extensions": ["com.nextcloud.desktopclient.FinderSyncExt"],
+  "containers": ["com.nextcloud.desktopclient", "com.nextcloud.desktopclient.FileProviderExt", "com.nextcloud.desktopclient.FinderSyncExt", "com.nextcloud.desktopclient.PHANTOM.NeverCreated"]
+}

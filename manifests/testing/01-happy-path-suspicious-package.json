@@ -1,0 +1,10 @@
+{
+  "_test_description": "Clean uninstall of Suspicious Package. All artifacts present. Every removal should succeed.",
+  "_expected_rc": 0,
+  "_function_under_test": "all",
+  "app_name": "SuspiciousPackage",
+  "apps_to_quit": ["/Applications/Suspicious Package.app"],
+  "paths": ["/Applications/Suspicious Package.app"],
+  "quicklook_plugins": ["com.mothersruin.SuspiciousPackageApp.QLPreview"],
+  "containers": ["com.mothersruin.SuspiciousPackageApp.QLPreview"]
+}

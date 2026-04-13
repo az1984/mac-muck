@@ -1,0 +1,16 @@
+STATUS  MANIFEST                                    FUNCTION  GOT    WANT   DESCRIPTION
+------  --------                                    --------  ---    ----   -----------
+--      01-happy-path-suspicious-package            all          --      0  Clean uninstall of Suspicious Package. All artifacts present
+--      02-happy-path-santa                         all          --      0  Clean uninstall of Santa. Tests LaunchAgent, LaunchDaemons, 
+--      03-happy-path-nextcloud                     all          --      0  Clean uninstall of Nextcloud. Tests Finder extension, contai
+--      04-happy-path-privileges                    all          --      0  Clean uninstall of Privileges. Tests LaunchAgent, LaunchDaem
+--      05-bad-ql-path                              RemoveQuickLookPlugin     --      1  RemoveQuickLookPlugin with nonexistent .qlgenerator path. Sh
+--      06-bogus-package                            ForgetPackage     --      1  ForgetPackage with a fabricated package ID that has no recei
+--      07-phantom-container                        RemovePathForUsers     --      1  Container bundle ID that was never created. Tests per-user r
+--      08-wrong-daemon-label                       UnloadAndRemoveLaunchDaemon     --      1  LaunchDaemon with typo'd label. Plist won't exist. Tests Unl
+--      09-missing-agent                            UnloadAndRemoveLaunchAgent     --      1  LaunchAgent with nonexistent label. Tests UnloadAndRemoveLau
+--      10-ghost-finder-ext                         RemoveFinderExtension     --      1  Finder extension bundle ID not registered with pluginkit. Te
+--      11-absent-helper                            RemovePrivilegedHelper     --      1  Privileged helper path that doesn't exist on disk. Tests Rem
+--      12-unknown-login-item                       RemoveLoginItems     --      1  Login item identifier not present in Background Task Managem
+--      13-nonexistent-app-path                     SafeRemovePath     --      1  SafeRemovePath with a path that doesn't exist on disk. Tests
+--      14-quit-missing-app                         QuitAppByPath     --      1  QuitAppByPath with an app bundle that doesn't exist. Tests t

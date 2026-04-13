@@ -1,0 +1,10 @@
+{
+  "_test_description": "QuitAppByPath with an app bundle that doesn't exist. Tests tolerant-missing for absent quit targets.",
+  "_expected_rc": 1,
+  "_function_under_test": "QuitAppByPath",
+  "app_name": "SuspiciousPackage",
+  "apps_to_quit": ["/Applications/Suspicious Package.app", "/Applications/GHOST_APP.app"],
+  "paths": ["/Applications/Suspicious Package.app"],
+  "quicklook_plugins": ["com.mothersruin.SuspiciousPackageApp.QLPreview"],
+  "containers": ["com.mothersruin.SuspiciousPackageApp.QLPreview"]
+}

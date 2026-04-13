@@ -1,0 +1,11 @@
+{
+  "_test_description": "Clean uninstall of Santa. Tests LaunchAgent, LaunchDaemons, package receipt, and app removal.",
+  "_expected_rc": 0,
+  "_function_under_test": "all",
+  "app_name": "Santa",
+  "apps_to_quit": ["/Applications/Santa.app"],
+  "paths": ["/Applications/Santa.app"],
+  "packages": ["com.google.santa"],
+  "launch_agents": ["com.google.santa"],
+  "launch_daemons": ["com.google.santa.bundleservice", "com.google.santa.metricservice", "com.google.santa.syncservice"]
+}

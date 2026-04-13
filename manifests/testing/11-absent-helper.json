@@ -1,0 +1,14 @@
+{
+  "_test_description": "Privileged helper path that doesn't exist on disk. Tests RemovePrivilegedHelper tolerant-missing.",
+  "_expected_rc": 1,
+  "_function_under_test": "RemovePrivilegedHelper",
+  "app_name": "Privileges",
+  "apps_to_quit": ["/Applications/Privileges.app"],
+  "paths": ["/Applications/Privileges.app"],
+  "profile_rel_paths": ["Library/Application Scripts/corp.sap.privileges"],
+  "packages": ["corp.sap.privileges.pkg"],
+  "launch_agents": ["corp.sap.privileges.agent"],
+  "launch_daemons": ["corp.sap.privileges.daemon", "corp.sap.privileges.helper", "corp.sap.privileges.watcher"],
+  "privileged_helpers": ["/Library/PrivilegedHelperTools/corp.sap.privileges.ABSENT.helper"],
+  "containers": ["corp.sap.privileges"]
+}

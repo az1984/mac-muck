@@ -1,0 +1,10 @@
+{
+  "_test_description": "RemoveQuickLookPlugin with nonexistent .qlgenerator path. Should fail gracefully (tolerant-missing). Other removals proceed.",
+  "_expected_rc": 1,
+  "_function_under_test": "RemoveQuickLookPlugin",
+  "app_name": "SuspiciousPackage",
+  "apps_to_quit": ["/Applications/Suspicious Package.app"],
+  "paths": ["/Applications/Suspicious Package.app"],
+  "quicklook_plugins": ["/Library/QuickLook/NONEXISTENT.qlgenerator"],
+  "containers": ["com.mothersruin.SuspiciousPackageApp.QLPreview"]
+}

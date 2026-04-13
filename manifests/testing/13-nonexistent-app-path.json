@@ -1,0 +1,10 @@
+{
+  "_test_description": "SafeRemovePath with a path that doesn't exist on disk. Tests tolerant-missing for absent paths. Real path still removed.",
+  "_expected_rc": 1,
+  "_function_under_test": "SafeRemovePath",
+  "app_name": "SuspiciousPackage",
+  "apps_to_quit": ["/Applications/Suspicious Package.app"],
+  "paths": ["/Applications/Suspicious Package.app", "/Applications/NONEXISTENT_APP.app"],
+  "quicklook_plugins": ["com.mothersruin.SuspiciousPackageApp.QLPreview"],
+  "containers": ["com.mothersruin.SuspiciousPackageApp.QLPreview"]
+}

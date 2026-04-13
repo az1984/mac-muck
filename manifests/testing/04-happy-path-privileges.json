@@ -1,0 +1,13 @@
+{
+  "_test_description": "Clean uninstall of Privileges. Tests LaunchAgent, LaunchDaemons, container, profile paths, and package receipt.",
+  "_expected_rc": 0,
+  "_function_under_test": "all",
+  "app_name": "Privileges",
+  "apps_to_quit": ["/Applications/Privileges.app"],
+  "paths": ["/Applications/Privileges.app"],
+  "profile_rel_paths": ["Library/Application Scripts/corp.sap.privileges"],
+  "packages": ["corp.sap.privileges.pkg"],
+  "launch_agents": ["corp.sap.privileges.agent"],
+  "launch_daemons": ["corp.sap.privileges.daemon", "corp.sap.privileges.helper", "corp.sap.privileges.watcher"],
+  "containers": ["corp.sap.privileges"]
+}

@@ -1,0 +1,11 @@
+{
+  "_test_description": "ForgetPackage with a fabricated package ID that has no receipt. Real package should still be forgotten. Fake one fails.",
+  "_expected_rc": 1,
+  "_function_under_test": "ForgetPackage",
+  "app_name": "Santa",
+  "apps_to_quit": ["/Applications/Santa.app"],
+  "paths": ["/Applications/Santa.app"],
+  "packages": ["com.google.santa", "com.google.santa.DOESNOTEXIST.fakepkg"],
+  "launch_agents": ["com.google.santa"],
+  "launch_daemons": ["com.google.santa.bundleservice", "com.google.santa.metricservice", "com.google.santa.syncservice"]
+}

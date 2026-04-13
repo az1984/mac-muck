@@ -1,0 +1,11 @@
+{
+  "_test_description": "LaunchAgent with nonexistent label. Tests UnloadAndRemoveLaunchAgent tolerant-missing on missing plist.",
+  "_expected_rc": 1,
+  "_function_under_test": "UnloadAndRemoveLaunchAgent",
+  "app_name": "Santa",
+  "apps_to_quit": ["/Applications/Santa.app"],
+  "paths": ["/Applications/Santa.app"],
+  "packages": ["com.google.santa"],
+  "launch_agents": ["com.google.santa", "com.google.santa.FAKE.agentlabel"],
+  "launch_daemons": ["com.google.santa.bundleservice", "com.google.santa.metricservice", "com.google.santa.syncservice"]
+}

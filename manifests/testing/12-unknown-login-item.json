@@ -1,0 +1,14 @@
+{
+  "_test_description": "Login item identifier not present in Background Task Management. Tests RemoveLoginItems tolerant-missing on absent item.",
+  "_expected_rc": 1,
+  "_function_under_test": "RemoveLoginItems",
+  "app_name": "Privileges",
+  "apps_to_quit": ["/Applications/Privileges.app"],
+  "paths": ["/Applications/Privileges.app"],
+  "profile_rel_paths": ["Library/Application Scripts/corp.sap.privileges"],
+  "packages": ["corp.sap.privileges.pkg"],
+  "launch_agents": ["corp.sap.privileges.agent"],
+  "launch_daemons": ["corp.sap.privileges.daemon", "corp.sap.privileges.helper", "corp.sap.privileges.watcher"],
+  "login_items": ["corp.sap.privileges.UNKNOWN.loginitem"],
+  "containers": ["corp.sap.privileges"]
+}
