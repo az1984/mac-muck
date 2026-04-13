@@ -52,7 +52,7 @@ JAMF_MODE=false
 #   • Iterations live here; helpers own tolerance logic
 #   • Only aggregates exit codes + branches on specific ints (no globals)
 # ──────────────────────────────────────────────────────────────────────────────
-main() {
+function CoreExec() {
 	if [[ $( _get_effective_euid ) -ne 0 ]]; then
 		echo "${ECHO_PREFIX}ERROR: This script must be run as root (sudo)." >&2
 		exit 3
