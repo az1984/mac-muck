@@ -1,74 +1,144 @@
-# Universal Uninstaller Framework
+# MUCK — Mac Uninstaller Construction Kit
 
-**JIRA:** [WPSMOB-5282](https://lilly-jira.atlassian.net/browse/WPSMOB-5282)
+A universal macOS app uninstaller driven by JSON manifests. Build a manifest
+describing what an app installed, hand it to the uninstaller, and everything
+gets cleaned up: app bundles, LaunchAgents/Daemons, package receipts, per-user
+caches, containers, QuickLook plugins, Privileged Helpers, Login Items, and
+Finder extensions.
 
-## Directory structure
+## Quick Start
+
+```bash
+# 1. Build a manifest (workstation tool — not deployed to endpoints)
+./tools/build_manifest.py \
+    --app-name "Suspicious Package" \
+    --path "/Applications/Suspicious Package.app" \
+    --ql-plugin "/Users/you/Library/Application Scripts/com.mothersruin.SuspiciousPackageApp.QLPreview" \
+    --container "/Users/you/Library/Containers/com.mothersruin.SuspiciousPackageApp.QLPreview" \
+    --package "com.mothersruin.SuspiciousPackage.pkg" \
+    --output suspicious_package.json
+
+# 2. Run the uninstaller
+sudo ./src/uninstaller.sh suspicious_package.json
+```
+
+## What It Handles
+
+| Artifact type       | Manifest key          | How it's removed                              |
+|---------------------|-----------------------|-----------------------------------------------|
+| App bundles         | `paths`               | Direct removal (SafeDelete)                   |
+| Per-user files      | `profile_rel_paths`   | Iterated across all user homes                |
+| Package receipts    | `packages`            | `pkgutil --forget`                            |
+| LaunchAgents        | `launch_agents`       | Disable, unload, remove plist (per-user + system) |
+| LaunchDaemons       | `launch_daemons`      | Disable, unload, remove plist (system-wide)   |
+| Finder extensions   | `finder_extensions`   | `pluginkit` unregister                        |
+| QuickLook plugins   | `quicklook_plugins`   | Remove `.qlgenerator` or note `.appex` removal |
+| Privileged Helpers  | `privileged_helpers`  | Remove from `/Library/PrivilegedHelperTools/`  |
+| Login Items         | `login_items`         | Detect type via BTM, route to correct handler |
+| Containers          | `containers`          | Remove from `~/Library/Containers/` per-user  |
+| Quit before removal | `apps_to_quit`        | Graceful quit before anything is touched      |
+
+## Project Structure
 
 ```
-.clinerules                          # Cline AI rules — enforces coding standards
-.shellspec                           # ShellSpec config
 src/
-  uninstaller.sh                     # The uninstaller script (working copy)
-spec/
-  spec_helper.sh                     # Test harness — sources functions without running main()
-  disable_launch_agent_spec.sh       # Spec for DisableLaunchAgent
-  disable_launch_daemon_spec.sh      # Spec for DisableLaunchDaemon
-  forget_package_spec.sh             # Spec for ForgetPackage
-  identify_login_item_type_spec.sh   # Spec for IdentifyLoginItemType
-  parse_input_spec.sh                # Spec for ParseInput (all three modes + priority)
-  remove_finder_extension_spec.sh    # Spec for RemoveFinderExtension
-  remove_privileged_helper_spec.sh   # Spec for RemovePrivilegedHelper
-  remove_quicklook_plugin_spec.sh    # Spec for RemoveQuickLookPlugin
-  unload_and_remove_launch_agent_spec.sh   # Spec for UnloadAndRemoveLaunchAgent
-  unload_and_remove_launch_daemon_spec.sh  # Spec for UnloadAndRemoveLaunchDaemon
-  verify_service_unloaded_spec.sh    # Spec for VerifyServiceUnloaded
-docs/
-  BASH_CODING_STANDARDS.md           # Team coding standards — mandatory reading
-  FUNCTION_SPECS.md                  # Interface specs + macOS command research for new functions
+  uninstaller.sh                     # The universal uninstaller (deployed to endpoints)
+
 tools/
-  build_manifest.py                  # Dev-side manifest builder (NOT deployed to endpoints)
+  build_manifest.py                  # Manifest builder (workstation-only)
+
+spec/
+  spec_helper.sh                     # Test harness
+  *_spec.sh                          # ShellSpec tests per function
+
+docs/
+  BASH_CODING_STANDARDS.md           # Team coding standards
+  FUNCTION_SPECS.md                  # Interface specs + macOS command research
+
+CONTRACT.md                          # Behavioral contract between builder and uninstaller
+ROADMAP.md                           # Planned features
 ```
 
-## What's built
+## Manifest Builder
 
-Functions already implemented in `src/uninstaller.sh`:
-- `ForgetPackage` — remove macOS package receipts
-- `ListGraphicalUsers` — discover local graphical users
-- `QuitAppByPath` — quit apps by bundle path, binary path, name, or PID
-- `RemoveDir` — remove empty directories
-- `RemovePathForUsers` — remove user-relative paths across all users
+`build_manifest.py` is designed to be forgiving. Admins can paste paths exactly
+as they find them on disk — the builder infers where each item belongs:
+
+- `/Users/jane/Library/Containers/com.foo.app` via `--container` or `--path`
+  is recognized as a container, and the bundle ID `com.foo.app` is extracted.
+- `/Users/jane/Library/Caches/com.foo.app` via `--path` is detected as per-user
+  and routed to `profile_rel_paths`.
+- QuickLook extensions are verified against `pluginkit` to confirm they're real
+  QL plugins before being added to `quicklook_plugins`.
+
+See `CONTRACT.md` for the full inference rules and routing tables.
+
+### Builder Flags
+
+| Flag             | Description                                    |
+|------------------|------------------------------------------------|
+| `--app-name`     | Display name (required)                        |
+| `--path`         | Absolute path to remove (auto-infers per-user) |
+| `--profile-path` | Explicitly per-user relative path              |
+| `--quit`         | App to quit before removal                     |
+| `--package`      | Package receipt ID to forget                   |
+| `--launchagent`  | LaunchAgent plist label                        |
+| `--launchdaemon` | LaunchDaemon plist label                       |
+| `--finder-ext`   | Finder extension bundle ID                     |
+| `--ql-plugin`    | QuickLook plugin (path or bundle ID)           |
+| `--helper`       | Privileged Helper path                         |
+| `--login-item`   | Login item identifier                          |
+| `--container`    | App container bundle ID (path also accepted)   |
+| `--output`       | Output file (default: stdout)                  |
+| `--validate`     | Validate an existing manifest                  |
+
+All flags are repeatable.
+
+## Running the Uninstaller
+
+```bash
+# With a manifest (recommended)
+sudo ./src/uninstaller.sh manifest.json
+sudo ./src/uninstaller.sh --manifest=manifest.json
+
+# With CLI flags (for Jamf, scripted use)
+sudo ./src/uninstaller.sh \
+    --app-name="MyApp" \
+    --paths="/Applications/MyApp.app" \
+    --packages="com.vendor.myapp"
+
+# Jamf mode (positional parameters from Jamf policy)
+# $4=jamf=true $5=app_name $6=paths $7=packages
+```
+
+All removal operations default to tolerant-missing — items that don't exist are
+skipped without error. This is by design: an uninstaller run across multiple
+user profiles will find artifacts in some but not others.
+
+## Functions
+
+Functions implemented in `src/uninstaller.sh`:
+
 - `SafeDelete` — non-recursive single-node delete
 - `SafeRemovePath` — recursive bottom-up path removal
+- `RemoveDir` — remove empty directories
 - `UnlinkSymlink` — unlink symlinks only
-- `VerifyServiceUnloaded` — check that a launchd service is no longer active
-- `DisableLaunchAgent` — disable a LaunchAgent for all graphical users
-- `DisableLaunchDaemon` — disable a LaunchDaemon in the system domain
-- `UnloadAndRemoveLaunchAgent` — full lifecycle: disable → bootout → verify → delete
-- `UnloadAndRemoveLaunchDaemon` — full lifecycle for daemons
-
-## What Cline needs to build
-
-New functions (see `docs/FUNCTION_SPECS.md` for full specs):
+- `RemovePathForUsers` — remove user-relative paths across all users
+- `ForgetPackage` — remove macOS package receipts
+- `QuitAppByPath` — quit apps by bundle path, binary path, name, or PID
+- `ListGraphicalUsers` — discover local graphical users
+- `DisableLaunchAgent` / `DisableLaunchDaemon` — disable services
+- `UnloadAndRemoveLaunchAgent` / `UnloadAndRemoveLaunchDaemon` — full lifecycle
+- `VerifyServiceUnloaded` — confirm a launchd service is inactive
 - `RemoveFinderExtension` — disable + unregister via `pluginkit`
-- `RemoveQuickLookPlugin` — remove `.qlgenerator` + path validation
-- `RemovePrivilegedHelper` — remove helper binary with path guard
-- `IdentifyLoginItemType` — query `sfltool dumpbtm`, detect persistence type, report TYPE/PATH/DISPOSITION
-- `ParseInput` — three-mode input router (manifest → CLI flags → Jamf params → hardcoded)
-- `ParseManifestJSON` — plutil-based JSON manifest parser (already designed, needs integration)
+- `RemoveQuickLookPlugin` — remove `.qlgenerator` bundles
+- `RemovePrivilegedHelper` — remove helper binaries with path guard
+- `IdentifyLoginItemType` — query BTM, detect persistence type
+- `RemoveLoginItems` — identify and remove login items by type
+- `ParseInput` — three-mode input router (manifest / CLI flags / Jamf)
+- `ParseManifestJSON` — `plutil`-based JSON manifest parser
 
-Plus: config arrays, main() iteration blocks, summary counters for each.
-
-## Process
-
-1. Read `.clinerules` and `docs/BASH_CODING_STANDARDS.md` first
-2. Read `docs/FUNCTION_SPECS.md` for interface contracts and macOS commands
-3. Implement functions in `src/uninstaller.sh` section #3
-4. Add config arrays in section #1, iteration blocks in section #2
-5. Run `shellcheck -s bash src/uninstaller.sh` — must pass with zero warnings
-6. Run `shellspec` — all specs must pass
-7. Update `@requires` line in the file header
-
-## Running tests
+## Testing
 
 ```bash
 # Install shellspec (if needed)
@@ -83,3 +153,10 @@ shellspec spec/remove_finder_extension_spec.sh
 # Lint
 shellcheck -s bash src/uninstaller.sh
 ```
+
+## Requirements
+
+- macOS 10.15+ (bash 3.2 compatible)
+- Root privileges (`sudo`)
+- No external dependencies — uses only built-in macOS tools (`plutil`,
+  `pkgutil`, `launchctl`, `pluginkit`, `qlmanage`)

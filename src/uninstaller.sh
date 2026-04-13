@@ -1,113 +1,44 @@
 #!/usr/bin/env bash
-# @name Microsoft 365 Copilot Uninstall.sh
-# @version 1.0.11
+# @name uninstaller.sh
+# @version 2.0.0
 # @branch main
 # @requires SafeRemovePath, ForgetPackage, SafeDelete, UnlinkSymlink, RemoveDir, RemovePathForUsers, QuitAppByPath, ListGraphicalUsers, VerifyServiceUnloaded, DisableLaunchAgent, DisableLaunchDaemon, UnloadAndRemoveLaunchAgent, UnloadAndRemoveLaunchDaemon, /usr/sbin/pkgutil, /bin/launchctl
 #
-# Purpose:
-#   Remove application files/directories and forget macOS package receipts.
+# MUCK — Mac Uninstaller Construction Kit
+#
+# Universal macOS uninstaller. Feed it a JSON manifest or CLI flags describing
+# what to remove and it handles quit, paths, per-user profiles, packages,
+# LaunchAgents/Daemons, Finder extensions, QuickLook plugins, Privileged
+# Helpers, Login Items, and Containers.
 #
 # Usage:
-#   sudo "./Microsoft 365 Copilot Uninstall.sh"
-#
-# Globals you can tweak:
-#   - PATHS_TO_REMOVE:              array of absolute paths (files/dirs) to remove
-#   - PROFILE_REL_PATHS_TO_REMOVE:  array of *user-relative* paths (no leading slash) to remove from each graphical user’s home (e.g., "Library/Caches/MyApp")
-#   - APPS_TO_QUIT:                 array of .app bundle paths to quit before removal (QuitAppByPath)
-#   - PKGS_TO_REMOVE:               array of package ids (anchors ^...$ optional; preserved if present)
-#   - LAUNCH_AGENTS_TO_REMOVE:      array of LaunchAgent plist labels to disable, unload, and remove
-#   - LAUNCH_DAEMONS_TO_REMOVE:     array of LaunchDaemon plist labels to disable, unload, and remove
-#   - APP_NAME:                     short name for summary logs (e.g., "MyApp")
-#   - ECHO_PREFIX, VERBOSE, DEBUG respected (display only)
+#   sudo ./uninstaller.sh manifest.json
+#   sudo ./uninstaller.sh --manifest=manifest.json
+#   sudo ./uninstaller.sh --app-name="App" --paths="/Applications/App.app" ...
 #
 # Exit:
 #   0 on success (no failures); 1 if any step fails; 3 if not run as root.
 
 # ──────────────────────────────────────────────────────────────────────────────
-# STRUCTURE AND HOW TO USE: 
-# 1) Populate app-specfic arrays of "targets" in the config section. Change the
-#    end of APP_NAME variable, as in `APP_NAME="${APP_NAME:-CHANGETHISPART}"``.
-# 2) Leave the main() function declaration alone!!!!! Empty arrays are not used.
-# 3) Helper functions are declared below so main has them. The template has
-#    all current functions. Inquire if you have issues or need new capabilities.
-# 4) End the script by invoking main with `main "$@"`. Do so AFTER helpers.
+# Config — defaults for standalone use. Overridden by manifest or CLI flags.
 # ──────────────────────────────────────────────────────────────────────────────
 
+APP_NAME="${APP_NAME:-}"
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Config (edit these) - WARNING: Usually, should not need to edit other pieces.
-# ──────────────────────────────────────────────────────────────────────────────
-# Declare most important stuff first so arrays of targets can use
-
-APP_NAME="${APP_NAME:-Microsoft 365 Copilot}"
-
-# The braces around APP_NAME ensure proper expansion if spaces present in app name
-ECHO_PREFIX="${ECHO_PREFIX:-${APP_NAME} Uninstaller.sh - }"
+ECHO_PREFIX="${ECHO_PREFIX:-uninstaller.sh - }"
 VERBOSE="${VERBOSE:-false}"
 DEBUG="${DEBUG:-false}"
 
-PATHS_TO_REMOVE=(
-	"/Applications/${APP_NAME}.app"
-  # If additional entries needed, specify below
-  "/Library/Application Support/Microsoft 365 Copilot"
-  "/Library/Preferences/com.microsoft.copilot"
-  "/Library/Caches/com.microsoft.copilot"
-)
-
-# User-relative (no leading slash). Each is removed under every graphical user’s home:
-#   e.g., "/Users/johndoe/Library/Caches/MyApp" becomes "Library/Caches/MyApp"
-PROFILE_REL_PATHS_TO_REMOVE=(
-  "Library/Application Support/Microsoft 365 Copilot"
-  "Library/Caches/com.microsoft.copilot*"
-)
-
-# Bundles and binaries to quit pre-uninstall.
-#   For .app bundles, specify full path so we can probe properly. For command line 
-#   binaries, specify either the full absolute path `/usr/local/bin/python` or
-#   process name such as `python`. Numeric PIDs can be specified in edge cases
-#   but should not be relied on as they will vary and querying is not handled here. 
-APPS_TO_QUIT=(
-  "/Applications/${APP_NAME}.app"
-  # If additional process entries needed, specify below
-)
-
-PKGS_TO_REMOVE=(
-	"com.microsoft.m365copilot"
-)
-
-# LaunchAgents (plist labels) to disable, unload, and remove.
-#   Searches /Library/LaunchAgents and ~/Library/LaunchAgents for each user.
-#   Specify the plist *label* (filename without .plist), e.g., "com.vendor.agent".
-LAUNCH_AGENTS_TO_REMOVE=(
-  # "com.microsoft.copilot.agent"
-)
-
-# LaunchDaemons (plist labels) to disable, unload, and remove.
-#   Searches /Library/LaunchDaemons only (daemons are system-wide, not per-user).
-#   Specify the plist *label* (filename without .plist), e.g., "com.vendor.daemon".
-LAUNCH_DAEMONS_TO_REMOVE=(
-  # "com.microsoft.copilot.daemon"
-)
-
-# Finder Sync Extensions (bundle identifiers) to disable and unregister via pluginkit.
-FINDER_EXTENSIONS_TO_REMOVE=(
-  # "com.microsoft.copilot.finder"
-)
-
-# QuickLook Plugins (paths to .qlgenerator bundles) to remove.
-QUICKLOOK_PLUGINS_TO_REMOVE=(
-  # "/Library/QuickLook/SuspiciousPackage.qlgenerator"
-)
-
-# Privileged Helper Tools (paths to helper binaries) to remove.
-PRIVILEGED_HELPERS_TO_REMOVE=(
-  # "/Library/PrivilegedHelperTools/com.microsoft.copilot.helper"
-)
-
-# Login Items (identifiers) to detect and remove via IdentifyLoginItemType.
-LOGIN_ITEMS_TO_REMOVE=(
-  # "com.microsoft.copilot.loginitem"
-)
+PATHS_TO_REMOVE=()
+PROFILE_REL_PATHS_TO_REMOVE=()
+APPS_TO_QUIT=()
+PKGS_TO_REMOVE=()
+LAUNCH_AGENTS_TO_REMOVE=()
+LAUNCH_DAEMONS_TO_REMOVE=()
+FINDER_EXTENSIONS_TO_REMOVE=()
+QUICKLOOK_PLUGINS_TO_REMOVE=()
+PRIVILEGED_HELPERS_TO_REMOVE=()
+LOGIN_ITEMS_TO_REMOVE=()
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Global flags set by ParseInput (do not edit here — parsed at runtime)
@@ -246,17 +177,25 @@ main() {
     fi
   done
 
-  # ── Remove QuickLook Plugins (by path to .qlgenerator bundle; tolerant missing)
+  # ── Remove QuickLook Plugins (path to .qlgenerator OR appex bundle ID; tolerant missing)
   local ql_plugin
   for ql_plugin in "${QUICKLOOK_PLUGINS_TO_REMOVE[@]}"; do
-    RemoveQuickLookPlugin "$ql_plugin" "--tolerant-missing"
-    rc=$?
-    if [[ $rc -eq 0 ]]; then
-      echo "${ECHO_PREFIX}Removed QuickLook plugin: $ql_plugin"
-      ((remove_success++))
+    if [[ "$ql_plugin" == /* ]]; then
+      # Legacy .qlgenerator — remove from disk
+      RemoveQuickLookPlugin "$ql_plugin" "--tolerant-missing"
+      rc=$?
+      if [[ $rc -eq 0 ]]; then
+        echo "${ECHO_PREFIX}Removed QuickLook plugin: $ql_plugin"
+        ((remove_success++))
+      else
+        echo "${ECHO_PREFIX}ERROR: Failed to remove QuickLook plugin: $ql_plugin (rc=$rc)" >&2
+        ((remove_fail++))
+      fi
     else
-      echo "${ECHO_PREFIX}ERROR: Failed to remove QuickLook plugin: $ql_plugin (rc=$rc)" >&2
-      ((remove_fail++))
+      # Modern appex bundle ID — the extension lives inside the parent .app
+      # bundle (already removed via paths). Just note it for the QL reload.
+      echo "${ECHO_PREFIX}QuickLook extension (appex): $ql_plugin — removed with parent app bundle"
+      ((remove_success++))
     fi
   done
 
@@ -1031,7 +970,7 @@ RemovePathForUsers() {
 
   # -------- user discovery (if none provided) --------
   if (( ${#users[@]} == 0 )); then
-    mapfile -t users < <( ListGraphicalUsers )
+    while IFS= read -r _u; do users+=("$_u"); done < <( ListGraphicalUsers )
   fi
 
   # -------- per-user removal loop --------
@@ -1686,7 +1625,7 @@ DisableLaunchAgent() {
 
   # --- discover graphical users ---
   local -a users=()
-  mapfile -t users < <( ListGraphicalUsers )
+  while IFS= read -r _u; do users+=("$_u"); done < <( ListGraphicalUsers )
   if (( ${#users[@]} == 0 )); then
     if $tolerant; then
       [[ ${VERBOSE:-false} == true || ${DEBUG:-false} == true ]] && \
@@ -2074,7 +2013,7 @@ UnloadAndRemoveLaunchAgent() {
 
   # --- discover graphical users ---
   local -a users=()
-  mapfile -t users < <( ListGraphicalUsers )
+  while IFS= read -r _u; do users+=("$_u"); done < <( ListGraphicalUsers )
 
   # --- system-wide LaunchAgent: /Library/LaunchAgents ---
   local sys_plist="/Library/LaunchAgents/${plist_name}"
@@ -3111,6 +3050,16 @@ function ParseInput {
     ((i++))
   done
 
+  # --- Auto-detect: bare .json file as positional arg ---
+  if [[ -z "$manifest_path" ]]; then
+    for arg in "$@"; do
+      if [[ "$arg" == *.json && -f "$arg" ]]; then
+        manifest_path="$arg"
+        break
+      fi
+    done
+  fi
+
   if [[ -n "$manifest_path" ]]; then
     # Manifest specified — validate path exists
     if [[ ! -f "$manifest_path" ]]; then
@@ -3200,7 +3149,7 @@ function ParseInput {
     fi
 
     # Update ECHO_PREFIX if APP_NAME changed
-    ECHO_PREFIX="${ECHO_PREFIX:-${APP_NAME} Uninstaller.sh - }"
+    ECHO_PREFIX="uninstaller.sh - ${APP_NAME:+${APP_NAME} - }"
 
     return 0
   fi
@@ -3225,7 +3174,7 @@ function ParseInput {
     fi
 
     # Update ECHO_PREFIX if APP_NAME changed
-    ECHO_PREFIX="${ECHO_PREFIX:-${APP_NAME} Uninstaller.sh - }"
+    ECHO_PREFIX="uninstaller.sh - ${APP_NAME:+${APP_NAME} - }"
 
     [[ ${DEBUG:-false} == true ]] && echo "DEBUG: ParseInput — Jamf mode detected, APP_NAME=$APP_NAME"
     return 0
@@ -3524,7 +3473,7 @@ function ParseManifestJSON {
   local extract_value
   extract_value() {
     local key="$1"
-    "$PLUTIL_BIN" -extract "$key" xml1 -o - "$tmp_xml" 2>/dev/null || echo ""
+    "$PLUTIL_BIN" -extract "$key" raw -o - "$tmp_xml" 2>/dev/null || echo ""
   }
 
   # Extract simple string values
@@ -3702,7 +3651,7 @@ function ParseManifestJSON {
   rm -f "$tmp_xml"
 
   # Update ECHO_PREFIX if APP_NAME changed
-  ECHO_PREFIX="${ECHO_PREFIX:-${APP_NAME} Uninstaller.sh - }"
+  ECHO_PREFIX="uninstaller.sh - ${APP_NAME:+${APP_NAME} - }"
 
   [[ ${DEBUG:-false} == true ]] && echo "${my_echo_prefix}${my_dbg_prefix}Manifest parsed successfully: $manifest_path"
   return 0
